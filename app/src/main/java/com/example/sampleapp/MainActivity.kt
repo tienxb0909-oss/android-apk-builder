@@ -16,7 +16,6 @@ import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.text.DecimalFormat
@@ -26,18 +25,17 @@ import java.util.Locale
 
 data class RateTier(val minOrder: Int, val maxOrder: Int, val rates: IntArray)
 
-data class DailyWorkData(
+data class DayPerformance(
     val date: String,
     var delivery: Int = 0,
     var pickup: Int = 0,
-    var returns: Int = 0
+    var returns: Int = 0,
+    var dailyProducedMoney: Long = 0L // Tiền sản lượng kiếm thêm được từ nhảy mốc trong ngày
 ) {
-    fun getStandardPoints(): Double {
-        return (delivery * 1.0) + (returns * 1.0) + (pickup / 6.0)
-    }
+    fun getPoints(): Double = (delivery * 1.0) + (returns * 1.0) + (pickup / 6.0)
 
     fun getWorkShift(): Double {
-        val pts = getStandardPoints()
+        val pts = getPoints()
         return when {
             pts >= 60.0 -> 1.0
             pts >= 30.0 -> 0.5
@@ -113,8 +111,7 @@ class MainActivity : AppCompatActivity() {
     private val pickupCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
     private val returnCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
 
-    // Quản lý theo ngày để tính công chuẩn
-    private val dailyRecords = mutableMapOf<String, DailyWorkData>()
+    private val dailyRecords = linkedMapOf<String, DayPerformance>()
 
     private lateinit var contentScrollView: ScrollView
     private lateinit var contentLayout: LinearLayout
@@ -122,7 +119,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnRegionSelector: TextView
 
     private val photoPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        if (uri != null) processImageWithIndicator(uri)
+        if (uri != null) processImageWithRobustTabDetection(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -403,10 +400,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderOrderTypeTab() {
-        val (counts, tiers, tabType) = when (currentTab) {
-            0 -> Triple(deliveryCounts, SpxRateTables.DELIVERY_TIERS, "giao")
-            1 -> Triple(pickupCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS, "lấy")
-            else -> Triple(returnCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS, "hoàn")
+        val (counts, tiers) = when (currentTab) {
+            0 -> Pair(deliveryCounts, SpxRateTables.DELIVERY_TIERS)
+            1 -> Pair(pickupCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
+            else -> Pair(returnCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
         }
 
         val totalCumulativeOrders = counts.values.sum()
@@ -540,10 +537,10 @@ class MainActivity : AppCompatActivity() {
         btnRow.addView(btnAddAction, halfP)
         contentLayout.addView(btnRow)
 
-        // Nhật ký theo ngày & tự động tính công
+        // NHẬT KÝ THEO NGÀY & TỔNG TIỀN KIẾM ĐƯỢC TRONG NGÀY
         val logHeader = RelativeLayout(this).apply {
             val tvTitle = TextView(this@MainActivity).apply {
-                text = "Nhật ký theo ngày & Ngày công"
+                text = "Tổng tiền kiếm được & Công theo ngày"
                 textSize = 15f
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(Color.parseColor("#1F2937"))
@@ -585,7 +582,7 @@ class MainActivity : AppCompatActivity() {
         val logsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 20, 0, 0) }
         if (dailyRecords.isEmpty()) {
             val tvEmpty = TextView(this).apply {
-                text = "Chưa có dữ liệu. Hãy quét ảnh báo cáo để tự tính sản lượng và ngày công."
+                text = "Chưa có dữ liệu ngày. Hãy tải ảnh báo cáo để tính thu nhập ngày."
                 textSize = 13f
                 setTextColor(Color.parseColor("#9CA3AF"))
                 gravity = Gravity.CENTER
@@ -599,34 +596,34 @@ class MainActivity : AppCompatActivity() {
             for ((date, record) in dailyRecords.entries.reversed()) {
                 val shift = record.getWorkShift()
                 val dayBaseWage = (wagePerDay * shift).toLong()
+                val dayGrandTotal = dayBaseWage + record.dailyProducedMoney
 
                 val logCard = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
-                    background = makeRounded(Color.WHITE, 20f)
-                    setPadding(35, 28, 35, 28)
+                    background = makeRounded(Color.WHITE, 22f)
+                    setPadding(35, 30, 35, 30)
                     val p = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     ).apply { bottomMargin = 20 }
                     layoutParams = p
+                    elevation = 2f
                 }
 
                 val r1 = RelativeLayout(this).apply {
                     val dateBox = LinearLayout(this@MainActivity).apply {
                         orientation = LinearLayout.HORIZONTAL
-                        val icon = TextView(this@MainActivity).apply { text = "📅 "; textSize = 13f }
-                        val d = TextView(this@MainActivity).apply { text = date; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#1F2937")) }
+                        val icon = TextView(this@MainActivity).apply { text = "📅 "; textSize = 14f }
+                        val d = TextView(this@MainActivity).apply { text = "Ngày $date"; textSize = 15f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#1F2937")) }
                         addView(icon)
                         addView(d)
                     }
 
-                    val shiftBadge = TextView(this@MainActivity).apply {
-                        text = if (shift > 0.0) "✅ +$shift công (+${fmt.format(dayBaseWage)}đ)" else "❌ 0 công"
-                        textSize = 12f
+                    val moneyBadge = TextView(this@MainActivity).apply {
+                        text = "+${fmt.format(dayGrandTotal)} đ"
+                        textSize = 15f
                         typeface = Typeface.DEFAULT_BOLD
-                        setTextColor(if (shift >= 1.0) Color.parseColor("#16A34A") else if (shift > 0.0) Color.parseColor("#D97706") else Color.parseColor("#DC2626"))
-                        background = makeRounded(if (shift >= 1.0) Color.parseColor("#DCFCE7") else if (shift > 0.0) Color.parseColor("#FEF3C7") else Color.parseColor("#FEE2E2"), 14f)
-                        setPadding(18, 8, 18, 8)
+                        setTextColor(Color.parseColor("#16A34A"))
                         val p = RelativeLayout.LayoutParams(
                             RelativeLayout.LayoutParams.WRAP_CONTENT,
                             RelativeLayout.LayoutParams.WRAP_CONTENT
@@ -634,18 +631,26 @@ class MainActivity : AppCompatActivity() {
                         layoutParams = p
                     }
                     addView(dateBox)
-                    addView(shiftBadge)
+                    addView(moneyBadge)
                 }
 
-                val noteTv = TextView(this).apply {
-                    text = "Giao: ${record.delivery} | Lấy: ${record.pickup} (quy đổi: ${String.format("%.1f", record.pickup / 6.0)}) | Hoàn: ${record.returns} → Điểm: ${String.format("%.1f", record.getStandardPoints())} đơn"
+                val breakdownView = TextView(this).apply {
+                    text = "• Lương cứng ($shift công): ${fmt.format(dayBaseWage)} đ\n• Tiền sản lượng nhảy mốc: ${fmt.format(record.dailyProducedMoney)} đ"
                     textSize = 12f
-                    setTextColor(Color.parseColor("#6B7280"))
+                    setTextColor(Color.parseColor("#374151"))
                     setPadding(0, 14, 0, 0)
                 }
 
+                val detailSummary = TextView(this).apply {
+                    text = "Giao: ${record.delivery} | Lấy: ${record.pickup} (quy đổi ${String.format("%.1f", record.pickup / 6.0)}) | Hoàn: ${record.returns} → Điểm ngày: ${String.format("%.1f", record.getPoints())} đơn"
+                    textSize = 11f
+                    setTextColor(Color.parseColor("#9CA3AF"))
+                    setPadding(0, 8, 0, 0)
+                }
+
                 logCard.addView(r1)
-                logCard.addView(noteTv)
+                logCard.addView(breakdownView)
+                logCard.addView(detailSummary)
                 logsContainer.addView(logCard)
             }
         }
@@ -656,7 +661,6 @@ class MainActivity : AppCompatActivity() {
         val baseSalaryMonthly = SpxRateTables.REGION_SALARIES[selectedRegion] ?: 5310000L
         val salaryPerDay = baseSalaryMonthly / 26.0
 
-        // TỔNG HỢP TOÀN BỘ SỐ CÔNG ĐẠT ĐƯỢC TỰ ĐỘNG
         val totalWorkShifts = dailyRecords.values.sumOf { it.getWorkShift() }
         val totalBaseSalary = (salaryPerDay * totalWorkShifts).toLong()
 
@@ -674,7 +678,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val tvTitleGrand = TextView(this).apply {
-            text = "TỔNG THU NHẬP THÁNG ($selectedRegion)"
+            text = "TỔNG THU NHẬP LŨY KẾ THÁNG ($selectedRegion)"
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#94A3B8"))
@@ -688,18 +692,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         val detailBase = TextView(this).apply {
-            text = "• Lương cơ bản tự động ($totalWorkShifts công): ${fmt.format(totalBaseSalary)} đ"
+            text = "• Tổng lương ngày công ($totalWorkShifts công): ${fmt.format(totalBaseSalary)} đ"
             textSize = 13f
             setTextColor(Color.WHITE)
         }
         val detailProd = TextView(this).apply {
-            text = "• Lương sản lượng (Giao + Lấy + Hoàn): ${fmt.format(totalProductEarnings)} đ"
+            text = "• Tổng tiền theo mốc sản lượng: ${fmt.format(totalProductEarnings)} đ"
             textSize = 13f
             setTextColor(Color.parseColor("#4ADE80"))
             setPadding(0, 6, 0, 0)
         }
         val ruleNote = TextView(this).apply {
-            text = "ℹ️ Đơn Giao (x1) + Hoàn (x1) + Lấy (/6). Đạt ≥60 đơn: 1 công, ≥30 đơn: 0.5 công."
+            text = "ℹ️ Công ngày: Giao (x1) + Hoàn (x1) + Lấy (/6). ≥60 đơn: 1 công, ≥30 đơn: 0.5 công."
             textSize = 11f
             setTextColor(Color.parseColor("#94A3B8"))
             setPadding(0, 16, 0, 0)
@@ -711,69 +715,6 @@ class MainActivity : AppCompatActivity() {
         grandCard.addView(detailProd)
         grandCard.addView(ruleNote)
         contentLayout.addView(grandCard)
-
-        // Báo cáo Excel
-        val excelCard = RelativeLayout(this).apply {
-            background = makeRounded(Color.WHITE, 24f)
-            setPadding(35, 30, 35, 30)
-            elevation = 3f
-            val p = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = 30 }
-            layoutParams = p
-
-            val iconSheet = TextView(this@MainActivity).apply {
-                id = View.generateViewId()
-                text = "📊"
-                textSize = 24f
-                background = makeRounded(Color.parseColor("#E8F5E9"), 16f)
-                setPadding(16, 12, 16, 12)
-            }
-
-            val textBox = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                val p1 = RelativeLayout.LayoutParams(
-                    RelativeLayout.LayoutParams.WRAP_CONTENT,
-                    RelativeLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    addRule(RelativeLayout.RIGHT_OF, iconSheet.id)
-                    leftMargin = 20
-                }
-                layoutParams = p1
-
-                val t1 = TextView(this@MainActivity).apply { text = "Báo cáo Excel (Tháng này)"; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#111827")) }
-                val t2 = TextView(this@MainActivity).apply { text = "Bảng đối soát đầy đủ 8 mức cân $selectedRegion"; textSize = 12f; setTextColor(Color.parseColor("#6B7280")) }
-                addView(t1)
-                addView(t2)
-            }
-
-            val btnExport = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                background = makeRounded(Color.parseColor("#2E7D32"), 20f)
-                setPadding(25, 14, 25, 14)
-                gravity = Gravity.CENTER
-                val p2 = RelativeLayout.LayoutParams(
-                    RelativeLayout.LayoutParams.WRAP_CONTENT,
-                    RelativeLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
-                    addRule(RelativeLayout.CENTER_VERTICAL)
-                }
-                layoutParams = p2
-
-                val icon = TextView(this@MainActivity).apply { text = "🔗 "; setTextColor(Color.WHITE); textSize = 11f }
-                val label = TextView(this@MainActivity).apply { text = "Xuất file"; setTextColor(Color.WHITE); textSize = 12f; typeface = Typeface.DEFAULT_BOLD }
-                addView(icon)
-                addView(label)
-                setOnClickListener { Toast.makeText(this@MainActivity, "Đang xuất file...", Toast.LENGTH_SHORT).show() }
-            }
-
-            addView(iconSheet)
-            addView(textBox)
-            addView(btnExport)
-        }
-        contentLayout.addView(excelCard)
 
         val tvTip = TextView(this).apply {
             text = "💡 Gợi ý số đơn cần đạt mốc tiếp theo"
@@ -976,7 +917,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 if (addedTotal > 0) {
                     val today = SimpleDateFormat("dd/MM", Locale.getDefault()).format(Date())
-                    val record = dailyRecords.getOrPut(today) { DailyWorkData(today) }
+                    val record = dailyRecords.getOrPut(today) { DayPerformance(today) }
                     when (currentTab) {
                         0 -> record.delivery += addedTotal
                         1 -> record.pickup += addedTotal
@@ -989,9 +930,9 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    // THUẬT TOÁN NHẬN DIỆN MỤC ĐƯỢC CHỌN QUA VẠCH ĐỎ/CAM DƯỚI CHÂN CHỮ
-    private fun processImageWithIndicator(uri: Uri) {
-        Toast.makeText(this, "Đang phân tích loại đơn & dữ liệu...", Toast.LENGTH_SHORT).show()
+    // THUẬT TOÁN NHẬN DIỆN VỊ TRÍ VẠCH ĐỎ/CAM THEO CHIỀU NGANG MÀN HÌNH
+    private fun processImageWithRobustTabDetection(uri: Uri) {
+        Toast.makeText(this, "Đang phân tích vạch chỉ mục & dữ liệu ảnh...", Toast.LENGTH_SHORT).show()
         val bitmap = try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 ImageDecoder.decodeBitmap(ImageDecoder.createSource(contentResolver, uri)) { decoder, _, _ ->
@@ -1007,12 +948,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        val detectedTab = detectTabByHorizontalIndicator(bitmap)
         val image = InputImage.fromBitmap(bitmap, 0)
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
         recognizer.process(image)
             .addOnSuccessListener { visionText ->
-                val detectedTab = detectSelectedTabFromIndicator(bitmap, visionText)
                 val typeNames = listOf("Đơn Giao", "Đơn Lấy", "Đơn Hoàn")
 
                 if (currentTab != 3 && detectedTab != currentTab) {
@@ -1021,7 +962,7 @@ class MainActivity : AppCompatActivity() {
 
                     AlertDialog.Builder(this)
                         .setTitle("⚠️ Báo cáo: $detectedName")
-                        .setMessage("Ảnh tải lên có gạch chân ở mục 【$detectedName】, nhưng bạn đang xem 【$currentName】.\n\nChuyển sang tab 【$detectedName】 để lưu chính xác?")
+                        .setMessage("Ảnh tải lên có gạch chọn ở mục 【$detectedName】, nhưng bạn đang xem 【$currentName】.\n\nChuyển sang tab 【$detectedName】 để lưu chính xác?")
                         .setPositiveButton("Chuyển & Lưu") { _, _ ->
                             switchTab(detectedTab)
                             executeDataImport(visionText.text, detectedTab)
@@ -1035,72 +976,58 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .addOnFailureListener {
-                Toast.makeText(this, "Lỗi nhận diện OCR: ${it.localizedMessage}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Lỗi nhận diện: ${it.localizedMessage}", Toast.LENGTH_SHORT).show()
             }
     }
 
-    // Kiểm tra pixel màu cam/đỏ bên dưới tọa độ của từng chữ
-    private fun detectSelectedTabFromIndicator(bitmap: Bitmap, visionText: Text): Int {
-        var giaoBox: android.graphics.Rect? = null
-        var layBox: android.graphics.Rect? = null
-        var traBox: android.graphics.Rect? = null
+    // Quét tìm vạch gạch chân màu cam ở vùng 1/4 phía trên ảnh
+    private fun detectTabByHorizontalIndicator(bitmap: Bitmap): Int {
+        val width = bitmap.width
+        val height = bitmap.height
 
-        for (block in visionText.textBlocks) {
-            for (line in block.lines) {
-                val t = line.text.lowercase()
-                if (t.contains("giao")) giaoBox = line.boundingBox
-                if (t.contains("lấy") || t.contains("lay")) layBox = line.boundingBox
-                if (t.contains("trả") || t.contains("tra")) traBox = line.boundingBox
-            }
-        }
+        // Thanh tab luôn nằm trong khoảng 8% đến 28% từ đỉnh ảnh xuống
+        val topLimit = (height * 0.08).toInt()
+        val bottomLimit = (height * 0.28).toInt()
 
-        fun hasOrangeIndicatorBelow(box: android.graphics.Rect?): Boolean {
-            if (box == null) return false
-            val startY = box.bottom
-            val endY = (box.bottom + (box.height() * 0.8)).toInt().coerceAtMost(bitmap.height - 1)
-            val startX = box.left.coerceAtLeast(0)
-            val endX = box.right.coerceAtMost(bitmap.width - 1)
+        var redXSum = 0L
+        var redPixelCount = 0
 
-            var orangeCount = 0
-            for (y in startY until endY step 2) {
-                for (x in startX until endX step 3) {
-                    val pixel = bitmap.getPixel(x, y)
-                    val r = Color.red(pixel)
-                    val g = Color.green(pixel)
-                    val b = Color.blue(pixel)
-                    // Màu cam/đỏ của gạch chân SPX (R cao, G vừa phải, B thấp)
-                    if (r > 170 && g in 40..130 && b < 80) {
-                        orangeCount++
-                        if (orangeCount > 6) return true
-                    }
+        for (y in topLimit until bottomLimit step 2) {
+            for (x in 0 until width step 3) {
+                val pixel = bitmap.getPixel(x, y)
+                val r = Color.red(pixel)
+                val g = Color.green(pixel)
+                val b = Color.blue(pixel)
+
+                // Dấu gạch đỏ/cam của SPX (Màu đỏ vượt trội)
+                if (r > 175 && g in 35..135 && b < 85) {
+                    redXSum += x
+                    redPixelCount++
                 }
             }
-            return false
         }
 
-        return when {
-            hasOrangeIndicatorBelow(giaoBox) -> 0
-            hasOrangeIndicatorBelow(layBox) -> 1
-            hasOrangeIndicatorBelow(traBox) -> 2
-            else -> {
-                // Fallback nếu ảnh mờ không soi được pixel: tìm vị trí từ khóa xuất hiện độc lập
-                val full = visionText.text.lowercase()
-                val giaoIdx = full.indexOf("đã giao")
-                val layIdx = full.indexOf("đã lấy")
-                val traIdx = full.indexOf("đã trả")
-                if (giaoIdx != -1 && (giaoIdx < layIdx || layIdx == -1)) 0
-                else if (layIdx != -1 && (layIdx < traIdx || traIdx == -1)) 1
-                else 0
+        if (redPixelCount > 8) {
+            val avgX = (redXSum / redPixelCount).toDouble() / width
+            return when {
+                avgX < 0.38 -> 0 // Nằm lệch bên trái -> Đã giao hàng
+                avgX in 0.38..0.66 -> 1 // Nằm ở giữa -> Đã lấy
+                else -> 2 // Nằm bên phải -> Đã trả hàng
             }
         }
+
+        return 0 // Mặc định nếu không thấy vạch thì coi là đơn giao
     }
 
     private fun executeDataImport(text: String, tabIndex: Int) {
-        val targetMap = when (tabIndex) {
-            0 -> deliveryCounts
-            1 -> pickupCounts
-            else -> returnCounts
+        val (targetMap, tiers) = when (tabIndex) {
+            0 -> Pair(deliveryCounts, SpxRateTables.DELIVERY_TIERS)
+            1 -> Pair(pickupCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
+            else -> Pair(returnCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
         }
+
+        // Tính tiền sản lượng trước khi cộng dồn
+        val previousMoney = calculateTierTotal(targetMap, tiers)
 
         val lines = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
         var dayCount = 0
@@ -1133,18 +1060,29 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Tính tiền sản lượng sau khi đã cộng dồn -> Tiền nhảy mốc sinh ra từ lượt quét hôm nay
+        val afterMoney = calculateTierTotal(targetMap, tiers)
+        val moneyGainedToday = (afterMoney - previousMoney).coerceAtLeast(0L)
+
         val dateMatch = Regex("""(\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2})""").find(text)
         val date = dateMatch?.value ?: SimpleDateFormat("dd/MM", Locale.getDefault()).format(Date())
 
-        val record = dailyRecords.getOrPut(date) { DailyWorkData(date) }
+        val record = dailyRecords.getOrPut(date) { DayPerformance(date) }
         when (tabIndex) {
             0 -> record.delivery += dayCount
             1 -> record.pickup += dayCount
             2 -> record.returns += dayCount
         }
+        record.dailyProducedMoney += moneyGainedToday
 
         renderCurrentTabContent()
-        Toast.makeText(this, "Đã cập nhật $dayCount đơn ngày $date! (Công ngày: ${record.getWorkShift()})", Toast.LENGTH_SHORT).show()
+
+        val baseSalaryMonthly = SpxRateTables.REGION_SALARIES[selectedRegion] ?: 5310000L
+        val wagePerDay = baseSalaryMonthly / 26.0
+        val dayShiftMoney = (wagePerDay * record.getWorkShift()).toLong()
+        val totalToday = dayShiftMoney + record.dailyProducedMoney
+
+        Toast.makeText(this, "Đã lưu $dayCount đơn! Hôm nay kiếm được: +${fmt.format(totalToday)} đ", Toast.LENGTH_LONG).show()
     }
 
     private fun createCell(text: String, isHeader: Boolean, color: Int, isBold: Boolean = false): TextView {
