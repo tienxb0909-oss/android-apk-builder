@@ -1,15 +1,11 @@
 package com.example.sampleapp
 
 import android.app.AlertDialog
-import android.graphics.Bitmap
 import android.graphics.Color
-import android.graphics.ImageDecoder
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.provider.MediaStore
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -105,7 +101,7 @@ object SpxRateTables {
 class MainActivity : AppCompatActivity() {
 
     private val fmt = DecimalFormat("#,###")
-    private var currentTab = 0
+    private var currentTab = 0 // 0: Giao, 1: Lấy, 2: Hoàn, 3: Tổng Kết
     private var selectedRegion = "KV1"
 
     private val deliveryCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
@@ -120,7 +116,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnRegionSelector: TextView
 
     private val photoPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        if (uri != null) processImageWithRobustTabDetection(uri)
+        if (uri != null) processDirectOcr(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -353,7 +349,13 @@ class MainActivity : AppCompatActivity() {
             setPadding(35, 20, 35, 20)
             gravity = Gravity.CENTER
             elevation = 16f
-            setOnClickListener { photoPickerLauncher.launch("image/*") }
+            setOnClickListener {
+                if (currentTab == 3) {
+                    Toast.makeText(this@MainActivity, "Vui lòng chọn tab Đơn Giao, Đơn Lấy hoặc Đơn Hoàn trước khi quét", Toast.LENGTH_SHORT).show()
+                } else {
+                    photoPickerLauncher.launch("image/*")
+                }
+            }
 
             val p = RelativeLayout.LayoutParams(
                 RelativeLayout.LayoutParams.WRAP_CONTENT,
@@ -400,7 +402,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // TÍNH MỐC CHUẨN: MỖI MỨC CÂN CÓ MỘT MỐC ĐỘC LẬP THEO CHÍNH SỐ ĐƠN CỦA NÓ
     private fun renderOrderTypeTab() {
         val (counts, tiers) = when (currentTab) {
             0 -> Pair(deliveryCounts, SpxRateTables.DELIVERY_TIERS)
@@ -411,7 +412,6 @@ class MainActivity : AppCompatActivity() {
         val totalCumulativeOrders = counts.values.sum()
         var totalMoney = 0L
 
-        // Tính tổng tiền: mỗi mức cân lấy theo mốc của riêng số đơn dòng đó
         counts.forEach { (col, count) ->
             if (count > 0) {
                 val tier = tiers.lastOrNull { count >= it.minOrder } ?: tiers.first()
@@ -462,7 +462,7 @@ class MainActivity : AppCompatActivity() {
                     text = if (mainTier != null) {
                         "Đạt mốc: ${mainTier.minOrder} - ${if (mainTier.maxOrder == Int.MAX_VALUE) "+" else mainTier.maxOrder} đơn"
                     } else {
-                        "Tổng đơn thực tế: $totalCumulativeOrders đơn"
+                        "Tổng đơn: $totalCumulativeOrders đơn"
                     }
                     textSize = 12f
                     setTextColor(Color.parseColor("#EE4D2D"))
@@ -498,7 +498,6 @@ class MainActivity : AppCompatActivity() {
 
         for (i in 0..7) {
             val count = counts[i] ?: 0
-            // ĐỐI CHIẾU MỐC RIÊNG THEO SỐ ĐƠN CỦA DÒNG ĐÓ
             val tier = if (count > 0) tiers.lastOrNull { count >= it.minOrder } ?: tiers.first() else null
             val itemMoney = if (tier != null && count > 0) {
                 tier.rates[i].toLong() * 1000L
@@ -516,35 +515,35 @@ class MainActivity : AppCompatActivity() {
         mainCard.addView(table)
         contentLayout.addView(mainCard)
 
-        // Cụm nút thao tác
         val btnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 30, 0, 30)
         }
         val btnScanAction = Button(this).apply {
-            text = "✨  QUÉT TỪ ẢNH"
-            textSize = 14f
+            val tabNames = listOf("ĐƠN GIAO", "ĐƠN LẤY", "ĐƠN HOÀN")
+            text = "✨  QUÉT ẢNH ${tabNames[currentTab]}"
+            textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.WHITE)
             background = makeRounded(Color.parseColor("#EE4D2D"), 18f)
             setOnClickListener { photoPickerLauncher.launch("image/*") }
         }
         val btnAddAction = Button(this).apply {
-            text = "＋  THÊM SỐ LIỆU"
-            textSize = 14f
+            text = "＋  THÊM TAY"
+            textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#374151"))
             background = makeRoundedStroke(Color.WHITE, Color.parseColor("#D1D5DB"), 18f)
             setOnClickListener { showAddOrderDialog(counts) }
         }
-        val halfP = LinearLayout.LayoutParams(0, 120, 1f)
+        val halfP = LinearLayout.LayoutParams(0, 120, 1.2f)
+        val smallP = LinearLayout.LayoutParams(0, 120, 0.8f)
         btnRow.addView(btnScanAction, halfP)
-        val space = View(this).apply { layoutParams = LinearLayout.LayoutParams(25, 1) }
+        val space = View(this).apply { layoutParams = LinearLayout.LayoutParams(20, 1) }
         btnRow.addView(space)
-        btnRow.addView(btnAddAction, halfP)
+        btnRow.addView(btnAddAction, smallP)
         contentLayout.addView(btnRow)
 
-        // Danh sách nhật ký ngày & Tổng tiền kiếm được trong ngày
         val logHeader = RelativeLayout(this).apply {
             val tvTitle = TextView(this@MainActivity).apply {
                 text = "Tổng tiền kiếm được & Công theo ngày"
@@ -938,89 +937,28 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun processImageWithRobustTabDetection(uri: Uri) {
-        Toast.makeText(this, "Đang phân tích vạch chỉ mục & dữ liệu ảnh...", Toast.LENGTH_SHORT).show()
-        val bitmap = try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                ImageDecoder.decodeBitmap(ImageDecoder.createSource(contentResolver, uri)) { decoder, _, _ ->
-                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-                    decoder.isMutableRequired = true
-                }
-            } else {
-                @Suppress("DEPRECATION")
-                MediaStore.Images.Media.getBitmap(contentResolver, uri)
-            }
+    // ĐỌC THẲNG ẢNH VÀO TAB HIỆN TẠI (KHÔNG CẦN CHECK TỰ ĐỘNG)
+    private fun processDirectOcr(uri: Uri) {
+        val tabNames = listOf("Đơn Giao", "Đơn Lấy", "Đơn Hoàn")
+        val currentName = tabNames.getOrElse(currentTab) { "Đơn Giao" }
+
+        Toast.makeText(this, "Đang đọc ảnh và lưu vào 【$currentName】...", Toast.LENGTH_SHORT).show()
+
+        val image = try {
+            InputImage.fromFilePath(this, uri)
         } catch (e: Exception) {
-            Toast.makeText(this, "Không thể đọc ảnh: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Không thể đọc file ảnh: ${e.message}", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val detectedTab = detectTabByHorizontalIndicator(bitmap)
-        val image = InputImage.fromBitmap(bitmap, 0)
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-
         recognizer.process(image)
             .addOnSuccessListener { visionText ->
-                val typeNames = listOf("Đơn Giao", "Đơn Lấy", "Đơn Hoàn")
-
-                if (currentTab != 3 && detectedTab != currentTab) {
-                    val detectedName = typeNames[detectedTab]
-                    val currentName = typeNames[currentTab]
-
-                    AlertDialog.Builder(this)
-                        .setTitle("⚠️ Báo cáo: $detectedName")
-                        .setMessage("Ảnh tải lên có gạch chọn ở mục 【$detectedName】, nhưng bạn đang xem 【$currentName】.\n\nChuyển sang tab 【$detectedName】 để lưu chính xác?")
-                        .setPositiveButton("Chuyển & Lưu") { _, _ ->
-                            switchTab(detectedTab)
-                            executeDataImport(visionText, detectedTab)
-                        }
-                        .setNegativeButton("Hủy", null)
-                        .show()
-                } else {
-                    val targetTab = if (currentTab == 3) detectedTab else currentTab
-                    if (currentTab == 3) switchTab(detectedTab)
-                    executeDataImport(visionText, targetTab)
-                }
+                executeDataImport(visionText, currentTab)
             }
             .addOnFailureListener {
-                Toast.makeText(this, "Lỗi nhận diện: ${it.localizedMessage}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Lỗi nhận diện OCR: ${it.localizedMessage}", Toast.LENGTH_SHORT).show()
             }
-    }
-
-    private fun detectTabByHorizontalIndicator(bitmap: Bitmap): Int {
-        val width = bitmap.width
-        val height = bitmap.height
-
-        val topLimit = (height * 0.08).toInt()
-        val bottomLimit = (height * 0.28).toInt()
-
-        var redXSum = 0L
-        var redPixelCount = 0
-
-        for (y in topLimit until bottomLimit step 2) {
-            for (x in 0 until width step 3) {
-                val pixel = bitmap.getPixel(x, y)
-                val r = Color.red(pixel)
-                val g = Color.green(pixel)
-                val b = Color.blue(pixel)
-
-                if (r > 175 && g in 35..135 && b < 85) {
-                    redXSum += x
-                    redPixelCount++
-                }
-            }
-        }
-
-        if (redPixelCount > 8) {
-            val avgX = (redXSum / redPixelCount).toDouble() / width
-            return when {
-                avgX < 0.38 -> 0
-                avgX in 0.38..0.66 -> 1
-                else -> 2
-            }
-        }
-
-        return 0
     }
 
     private fun executeDataImport(visionText: Text, tabIndex: Int) {
@@ -1096,12 +1034,15 @@ class MainActivity : AppCompatActivity() {
 
         renderCurrentTabContent()
 
+        val tabNames = listOf("Đơn Giao", "Đơn Lấy", "Đơn Hoàn")
+        val currentName = tabNames.getOrElse(tabIndex) { "" }
+
         val baseSalaryMonthly = SpxRateTables.REGION_SALARIES[selectedRegion] ?: 5310000L
         val wagePerDay = baseSalaryMonthly / 26.0
         val dayShiftMoney = (wagePerDay * record.getWorkShift()).toLong()
         val totalToday = dayShiftMoney + record.dailyProducedMoney
 
-        Toast.makeText(this, "Đã khớp đúng $dayCount đơn! Hôm nay: +${fmt.format(totalToday)} đ", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Đã lưu $dayCount đơn vào $currentName! Hôm nay: +${fmt.format(totalToday)} đ", Toast.LENGTH_LONG).show()
     }
 
     private fun createCell(text: String, isHeader: Boolean, color: Int, isBold: Boolean = false): TextView {
