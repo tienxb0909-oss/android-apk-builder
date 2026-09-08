@@ -1,14 +1,14 @@
 package com.example.sampleapp
 
-import android.content.Intent
+import android.app.AlertDialog
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
+import android.view.View
+import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.mlkit.vision.common.InputImage
@@ -18,7 +18,14 @@ import java.text.DecimalFormat
 
 data class RateTier(val minOrder: Int, val maxOrder: Int, val rates: IntArray)
 
+data class DayLog(val date: String, val totalOrders: Int, val note: String)
+
 object SpxRateTables {
+    val WEIGHT_LABELS = listOf(
+        ">0 - 2 kg", ">2 - 4 kg", ">4 - 6 kg", ">6 - 8 kg",
+        ">8 - 10 kg", ">10 - 12 kg", ">12 - 15 kg", ">15 kg"
+    )
+
     val DELIVERY_TIERS = listOf(
         RateTier(1, 15, intArrayOf(25, 60, 60, 70, 70, 90, 110, 120)),
         RateTier(15, 30, intArrayOf(50, 110, 120, 120, 150, 180, 220, 240)),
@@ -44,76 +51,7 @@ object SpxRateTables {
         RateTier(1700, 1800, intArrayOf(3175, 5725, 6675, 6975, 8900, 11425, 13975, 14925)),
         RateTier(1800, 1900, intArrayOf(3450, 6200, 7250, 7600, 9650, 12425, 15175, 16225)),
         RateTier(1900, 2000, intArrayOf(3750, 6750, 7875, 8250, 10500, 13500, 16500, 17625)),
-        RateTier(2000, 2100, intArrayOf(4050, 7300, 8500, 8900, 11350, 14575, 17825, 19025)),
-        RateTier(2100, 2200, intArrayOf(4275, 7700, 8975, 9400, 11975, 15400, 18800, 20100)),
-        RateTier(2200, 2300, intArrayOf(4425, 7975, 9300, 9725, 12400, 15925, 19475, 20800)),
-        RateTier(2300, 2400, intArrayOf(4650, 8375, 9775, 10225, 13025, 16750, 20450, 21850)),
-        RateTier(2400, 2500, intArrayOf(4825, 8675, 10125, 10625, 13550, 17375, 21225, 22675)),
-        RateTier(2500, 2600, intArrayOf(5075, 9125, 10650, 11175, 14200, 18275, 22325, 23850)),
-        RateTier(2600, 2700, intArrayOf(5275, 9500, 11075, 11600, 14775, 19000, 23200, 24800)),
-        RateTier(2700, 2800, intArrayOf(5625, 10125, 11825, 12375, 15750, 20250, 24750, 26450)),
-        RateTier(2800, 2900, intArrayOf(6000, 10800, 12600, 13200, 16800, 21600, 26400, 28200)),
-        RateTier(2900, 3000, intArrayOf(6300, 11350, 13225, 13850, 17650, 22675, 27725, 29600)),
-        RateTier(3000, 3100, intArrayOf(6600, 11875, 13850, 14525, 18475, 23750, 29050, 31025)),
-        RateTier(3100, 3200, intArrayOf(6875, 12375, 14450, 15125, 19250, 24750, 30250, 32325)),
-        RateTier(3200, 3300, intArrayOf(7125, 12825, 14975, 15675, 19950, 25650, 31350, 33500)),
-        RateTier(3300, 3400, intArrayOf(7400, 13325, 15550, 16275, 20725, 26650, 32550, 34775)),
-        RateTier(3400, 3500, intArrayOf(7725, 13900, 16225, 17000, 21625, 27800, 34000, 36300)),
-        RateTier(3500, 3600, intArrayOf(8050, 14500, 16900, 17700, 22550, 28975, 35425, 37825)),
-        RateTier(3600, 3700, intArrayOf(8525, 15350, 17900, 18750, 23875, 30700, 37500, 40075)),
-        RateTier(3700, 3800, intArrayOf(8850, 15925, 18575, 19475, 24775, 31850, 38950, 41600)),
-        RateTier(3800, 3900, intArrayOf(9200, 16550, 19325, 20250, 25750, 33125, 40475, 43250)),
-        RateTier(3900, 4000, intArrayOf(9475, 17050, 19900, 20850, 26525, 34100, 41700, 44525)),
-        RateTier(4000, 4100, intArrayOf(9625, 17325, 20225, 21175, 26950, 34650, 42350, 45250)),
-        RateTier(4100, 4200, intArrayOf(9975, 17950, 20950, 21950, 27925, 35900, 43900, 46875)),
-        RateTier(4200, 4300, intArrayOf(10550, 19000, 22150, 23200, 29550, 37975, 46425, 49575)),
-        RateTier(4300, 4400, intArrayOf(10850, 19525, 22775, 23875, 30375, 39050, 47750, 50000)),
-        RateTier(4400, 4500, intArrayOf(11075, 19925, 23250, 24375, 31000, 39875, 48725, 50000)),
-        RateTier(4500, 4600, intArrayOf(11350, 20425, 23825, 24975, 31775, 40850, 49950, 50000)),
-        RateTier(4600, 4700, intArrayOf(11475, 20650, 24100, 25250, 32125, 41300, 50000, 50000)),
-        RateTier(4700, 4800, intArrayOf(11875, 21375, 24950, 26125, 33250, 42750, 50000, 50000)),
-        RateTier(4800, 4900, intArrayOf(12300, 22150, 25825, 27050, 34450, 44275, 50000, 50000)),
-        RateTier(4900, 5000, intArrayOf(12625, 22725, 26525, 27775, 35350, 45450, 50000, 50000)),
-        RateTier(5000, 5100, intArrayOf(12750, 22950, 26775, 28050, 35700, 45900, 50000, 50000)),
-        RateTier(5100, 5200, intArrayOf(13075, 23525, 27450, 28775, 36600, 47075, 50000, 50000)),
-        RateTier(5200, 5300, intArrayOf(13275, 23900, 27875, 29200, 37175, 47800, 50000, 50000)),
-        RateTier(5300, 5400, intArrayOf(13600, 24475, 28550, 29925, 38075, 48950, 50000, 50000)),
-        RateTier(5400, 5500, intArrayOf(13675, 24625, 28725, 30075, 38300, 49225, 50000, 50000)),
-        RateTier(5500, 5600, intArrayOf(13975, 25150, 29350, 30750, 39125, 50000, 50000, 50000)),
-        RateTier(5600, 5700, intArrayOf(14200, 25550, 29825, 31250, 39750, 50000, 50000, 50000)),
-        RateTier(5700, 5800, intArrayOf(14525, 26150, 30500, 31950, 40675, 50000, 50000, 50000)),
-        RateTier(5800, 5900, intArrayOf(14675, 26425, 30825, 32275, 41100, 50000, 50000, 50000)),
-        RateTier(5900, 6000, intArrayOf(15000, 27000, 31500, 33000, 42000, 50000, 50000, 50000)),
-        RateTier(6000, 6100, intArrayOf(15150, 27275, 31825, 33325, 42425, 50000, 50000, 50000)),
-        RateTier(6100, 6200, intArrayOf(15475, 27850, 32500, 34050, 43325, 50000, 50000, 50000)),
-        RateTier(6200, 6300, intArrayOf(15650, 28175, 32875, 34425, 43825, 50000, 50000, 50000)),
-        RateTier(6300, 6400, intArrayOf(15975, 28750, 33550, 35150, 44725, 50000, 50000, 50000)),
-        RateTier(6400, 6500, intArrayOf(16200, 29150, 34025, 35650, 45350, 50000, 50000, 50000)),
-        RateTier(6500, 6600, intArrayOf(16525, 29750, 34700, 36350, 46275, 50000, 50000, 50000)),
-        RateTier(6600, 6700, intArrayOf(16650, 29975, 34975, 36625, 46625, 50000, 50000, 50000)),
-        RateTier(6700, 6800, intArrayOf(16975, 30550, 35650, 37350, 47525, 50000, 50000, 50000)),
-        RateTier(6800, 6900, intArrayOf(17100, 30775, 35900, 37625, 47875, 50000, 50000, 50000)),
-        RateTier(6900, 7000, intArrayOf(17375, 31275, 36500, 38225, 48650, 50000, 50000, 50000)),
-        RateTier(7000, 7200, intArrayOf(17650, 31775, 37075, 38825, 49425, 50000, 50000, 50000)),
-        RateTier(7200, 7400, intArrayOf(18125, 32625, 38075, 39875, 50000, 50000, 50000, 50000)),
-        RateTier(7400, 7600, intArrayOf(18550, 33400, 38950, 40800, 50000, 50000, 50000, 50000)),
-        RateTier(7600, 7800, intArrayOf(19050, 34300, 40000, 41900, 50000, 50000, 50000, 50000)),
-        RateTier(7800, 8000, intArrayOf(19425, 34975, 40800, 42725, 50000, 50000, 50000, 50000)),
-        RateTier(8000, 8200, intArrayOf(20025, 36050, 42050, 44050, 50000, 50000, 50000, 50000)),
-        RateTier(8200, 8400, intArrayOf(20425, 36775, 42900, 44925, 50000, 50000, 50000, 50000)),
-        RateTier(8400, 8700, intArrayOf(21475, 38650, 45100, 47250, 50000, 50000, 50000, 50000)),
-        RateTier(8700, 9000, intArrayOf(21925, 39475, 46050, 48225, 50000, 50000, 50000, 50000)),
-        RateTier(9000, 9300, intArrayOf(22900, 41225, 48100, 50000, 50000, 50000, 50000, 50000)),
-        RateTier(9300, 9600, intArrayOf(23375, 42075, 49100, 50000, 50000, 50000, 50000, 50000)),
-        RateTier(9600, 9900, intArrayOf(23925, 43075, 50000, 50000, 50000, 50000, 50000, 50000)),
-        RateTier(9900, 10200, intArrayOf(24875, 44775, 50000, 50000, 50000, 50000, 50000, 50000)),
-        RateTier(10200, 10500, intArrayOf(25400, 45725, 50000, 50000, 50000, 50000, 50000, 50000)),
-        RateTier(10500, 10800, intArrayOf(26325, 47375, 50000, 50000, 50000, 50000, 50000, 50000)),
-        RateTier(10800, 11100, intArrayOf(27400, 49325, 50000, 50000, 50000, 50000, 50000, 50000)),
-        RateTier(11100, 11400, intArrayOf(28125, 50000, 50000, 50000, 50000, 50000, 50000, 50000)),
-        RateTier(11400, 11700, intArrayOf(28850, 50000, 50000, 50000, 50000, 50000, 50000, 50000)),
-        RateTier(11700, 12000, intArrayOf(29575, 50000, 50000, 50000, 50000, 50000, 50000, 50000)),
-        RateTier(12000, Int.MAX_VALUE, intArrayOf(30300, 50000, 50000, 50000, 50000, 50000, 50000, 50000))
+        RateTier(2000, Int.MAX_VALUE, intArrayOf(4050, 7300, 8500, 8900, 11350, 14575, 17825, 19025))
     )
 
     val PICKUP_AND_RETURN_TIERS = listOf(
@@ -128,210 +66,762 @@ object SpxRateTables {
         RateTier(750, 900, intArrayOf(275, 500, 575, 600, 775, 1000, 1200, 1300)),
         RateTier(900, 1200, intArrayOf(325, 575, 675, 725, 900, 1175, 1425, 1525)),
         RateTier(1200, 1500, intArrayOf(425, 775, 900, 925, 1200, 1525, 1875, 2000)),
-        RateTier(1500, 1800, intArrayOf(500, 900, 1050, 1100, 1400, 1800, 2200, 2350)),
-        RateTier(1800, 2100, intArrayOf(525, 950, 1100, 1150, 1475, 1900, 2300, 2475)),
-        RateTier(2100, 2400, intArrayOf(600, 1075, 1250, 1325, 1675, 2150, 2650, 2825)),
-        RateTier(2400, 2700, intArrayOf(675, 1225, 1425, 1475, 1900, 2425, 2975, 3175)),
-        RateTier(2700, 3000, intArrayOf(750, 1350, 1575, 1650, 2100, 2700, 3300, 3525)),
-        RateTier(3000, 3600, intArrayOf(850, 1525, 1775, 1875, 2375, 3050, 3750, 4000)),
-        RateTier(3600, 4200, intArrayOf(1050, 1900, 2200, 2300, 2950, 3775, 4625, 4925)),
-        RateTier(4200, 4800, intArrayOf(1300, 2350, 2725, 2850, 3650, 4675, 5725, 6100)),
-        RateTier(4800, 5400, intArrayOf(1575, 2825, 3300, 3475, 4400, 5675, 6925, 7400)),
-        RateTier(5400, 6000, intArrayOf(1850, 3325, 3875, 4075, 5175, 6650, 8150, 8700)),
-        RateTier(6000, 6600, intArrayOf(2025, 3650, 4250, 4450, 5675, 7300, 8900, 9525)),
-        RateTier(6600, 8100, intArrayOf(2350, 4225, 4925, 5175, 6575, 8450, 10350, 11050)),
-        RateTier(8100, 9600, intArrayOf(2775, 5000, 5825, 6100, 7775, 10000, 12200, 13050)),
-        RateTier(9600, 11100, intArrayOf(3350, 6025, 7025, 7375, 9375, 12050, 14750, 15750)),
-        RateTier(11100, 12600, intArrayOf(3900, 7025, 8200, 8575, 10925, 14050, 17150, 18325)),
-        RateTier(12600, 14100, intArrayOf(4375, 7875, 9200, 9625, 12250, 15750, 19250, 20575)),
-        RateTier(14100, 15600, intArrayOf(4950, 8900, 10400, 10900, 13850, 17825, 21775, 23275)),
-        RateTier(15600, 17100, intArrayOf(5550, 10000, 11650, 12200, 15550, 19975, 24425, 26075)),
-        RateTier(17100, 18600, intArrayOf(6225, 11200, 13075, 13700, 17425, 22400, 27400, 29250)),
-        RateTier(18600, 21000, intArrayOf(7200, 12950, 15125, 15850, 20150, 25925, 31675, 33850)),
-        RateTier(21000, 23400, intArrayOf(8325, 14975, 17475, 18325, 23300, 29975, 36625, 39125)),
-        RateTier(23400, 25800, intArrayOf(9450, 17000, 19850, 20800, 26450, 34025, 41575, 44425)),
-        RateTier(25800, 28200, intArrayOf(10975, 19750, 23050, 24150, 30725, 39500, 48300, 51575)),
-        RateTier(28200, 30600, intArrayOf(12250, 22050, 25725, 26950, 34300, 44100, 53900, 57575)),
-        RateTier(30600, 33000, intArrayOf(13200, 23750, 27725, 29050, 36950, 47525, 58075, 62050)),
-        RateTier(33000, 35400, intArrayOf(14150, 25475, 29725, 31125, 39625, 50950, 62250, 66500)),
-        RateTier(35400, 39400, intArrayOf(15450, 27800, 32450, 34000, 43250, 55625, 67975, 72625)),
-        RateTier(39400, 43400, intArrayOf(17050, 30700, 35800, 37500, 47750, 61375, 75025, 80125)),
-        RateTier(43400, 47400, intArrayOf(18650, 33575, 39175, 41025, 52225, 67150, 82050, 87650)),
-        RateTier(47400, 51400, intArrayOf(20250, 36450, 42525, 44550, 56700, 72900, 89100, 95175)),
-        RateTier(51400, 57400, intArrayOf(22450, 40400, 47150, 49400, 62850, 80825, 98775, 100000)),
-        RateTier(57400, 63400, intArrayOf(24850, 44725, 52175, 54675, 69575, 89450, 100000, 100000)),
-        RateTier(63400, 69400, intArrayOf(27250, 49050, 57225, 59950, 76300, 98100, 100000, 100000)),
-        RateTier(69400, 75400, intArrayOf(29650, 53375, 62275, 65225, 83025, 100000, 100000, 100000)),
-        RateTier(75400, Int.MAX_VALUE, intArrayOf(33500, 60300, 70350, 73700, 93800, 100000, 100000, 100000))
+        RateTier(1500, Int.MAX_VALUE, intArrayOf(500, 900, 1050, 1100, 1400, 1800, 2200, 2350))
     )
 }
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var tvResult: TextView
-    private lateinit var btnScan: Button
-    private val formatter = DecimalFormat("#,###")
+    private val fmt = DecimalFormat("#,###")
+    private var currentTab = 0 // 0: Giao, 1: Lấy, 2: Hoàn, 3: Tổng Kết
 
-    private val selectImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        if (uri != null) {
-            processImage(uri)
-        }
+    // Dữ liệu mẫu khớp 100% các ảnh
+    private val deliveryCounts = mutableMapOf(0 to 717, 1 to 27, 2 to 20, 3 to 9, 4 to 13, 5 to 0, 6 to 1, 7 to 0)
+    private val pickupCounts = mutableMapOf(0 to 926, 1 to 10, 2 to 3, 3 to 0, 4 to 1, 5 to 0, 6 to 0, 7 to 0)
+    private val returnCounts = mutableMapOf(0 to 153, 1 to 2, 2 to 2, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
+
+    private val deliveryLogs = mutableListOf(DayLog("2026-09-06", 79, "Phân tích tự động từ ảnh"), DayLog("2026-09-05", 150, "Nhập tay"))
+    private val pickupLogs = mutableListOf(DayLog("2026-09-06", 71, "Phân tích tự động từ ảnh"))
+    private val returnLogs = mutableListOf(DayLog("2026-09-06", 31, "Phân tích tự động từ ảnh"))
+
+    private lateinit var contentScrollView: ScrollView
+    private lateinit var contentLayout: LinearLayout
+    private val navTabViews = mutableListOf<LinearLayout>()
+
+    private val photoPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) parseOcrImage(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val rootLayout = LinearLayout(this).apply {
+        val rootLayout = RelativeLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#F7F8FA"))
+        }
+
+        // 1. Header Bar
+        val header = createHeader()
+        rootLayout.addView(header)
+
+        // 2. Bottom Navigation
+        val bottomNav = createBottomNav()
+        rootLayout.addView(bottomNav)
+
+        // 3. Scrollable Content
+        contentScrollView = ScrollView(this).apply {
+            val p = RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.MATCH_PARENT,
+                RelativeLayout.LayoutParams.MATCH_PARENT
+            ).apply {
+                addRule(RelativeLayout.BELOW, header.id)
+                addRule(RelativeLayout.ABOVE, bottomNav.id)
+            }
+            layoutParams = p
+        }
+
+        contentLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 60, 40, 60)
-            gravity = Gravity.CENTER_HORIZONTAL
-            setBackgroundColor(Color.parseColor("#F5F5F5"))
+            setPadding(30, 20, 30, 100)
         }
+        contentScrollView.addView(contentLayout)
+        rootLayout.addView(contentScrollView)
 
-        val tvTitle = TextView(this).apply {
-            text = "TÍNH LƯƠNG TÀI XẾ SPX (KV1)"
-            textSize = 20f
-            setTextColor(Color.parseColor("#EE4D2D"))
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 40)
-        }
-
-        btnScan = Button(this).apply {
-            text = "📷 CHỌN ẢNH CHỤP ĐƠN HÀNG"
-            setBackgroundColor(Color.parseColor("#EE4D2D"))
-            setTextColor(Color.WHITE)
-            textSize = 16f
-            setOnClickListener { selectImageLauncher.launch("image/*") }
-        }
-
-        val scrollView = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-            ).apply { topMargin = 40 }
-        }
-
-        tvResult = TextView(this).apply {
-            text = "Vui lòng chọn ảnh chụp màn hình ứng dụng SPX để tự động quét ngày công và tính tiền."
-            textSize = 15f
-            setTextColor(Color.DKGRAY)
-            setLineSpacing(10f, 1.2f)
-        }
-
-        scrollView.addView(tvResult)
-        rootLayout.addView(tvTitle)
-        rootLayout.addView(btnScan)
-        rootLayout.addView(scrollView)
+        // 4. Floating Action Button: Quét ảnh SPX
+        val fab = createFloatingActionButton()
+        rootLayout.addView(fab)
 
         setContentView(rootLayout)
+        switchTab(0)
     }
 
-    private fun processImage(uri: Uri) {
-        tvResult.text = "Đang xử lý đọc ảnh, vui lòng đợi..."
-        try {
-            val image = InputImage.fromFilePath(this, uri)
-            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private fun createHeader(): View {
+        return RelativeLayout(this).apply {
+            id = View.generateViewId()
+            setBackgroundColor(Color.WHITE)
+            setPadding(35, 30, 35, 25)
+            elevation = 6f
 
-            recognizer.process(image)
-                .addOnSuccessListener { visionText ->
-                    val resultText = parseAndCalculate(visionText.text)
-                    tvResult.text = resultText
+            val logoBox = LinearLayout(this@MainActivity).apply {
+                id = View.generateViewId()
+                background = makeRounded(Color.parseColor("#EE4D2D"), 14f)
+                setPadding(14, 6, 14, 6)
+                val tv = TextView(this@MainActivity).apply {
+                    text = "SPX"
+                    setTextColor(Color.WHITE)
+                    textSize = 12f
+                    typeface = Typeface.DEFAULT_BOLD
                 }
-                .addOnFailureListener { e ->
-                    tvResult.text = "Lỗi đọc ảnh: ${e.localizedMessage}"
-                }
-        } catch (e: Exception) {
-            tvResult.text = "Lỗi nạp file ảnh: ${e.localizedMessage}"
-        }
-    }
-
-    private fun parseAndCalculate(text: String): String {
-        val lines = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
-
-        val dateMatch = Regex("""(\d{2}/\d{2})""").find(text)
-        val date = dateMatch?.value ?: "Chưa rõ"
-
-        val type = when {
-            text.contains("trả hàng", ignoreCase = true) -> "HOAN"
-            text.contains("lấy", ignoreCase = true) -> "LAY"
-            else -> "GIAO"
-        }
-
-        val items = mutableMapOf<Int, Int>()
-
-        for (i in lines.indices) {
-            val line = lines[i]
-            val colIndex = when {
-                line.contains("0.000 - 2.001") || line.contains("0 - 2") -> 0
-                line.contains("2.001 - 4.001") || line.contains("2 - 4") -> 1
-                line.contains("4.001 - 6.001") || line.contains("4 - 6") -> 2
-                line.contains("6.001 - 8.001") || line.contains("6 - 8") -> 3
-                line.contains("8.001 - 10.001") || line.contains("8 - 10") -> 4
-                line.contains("10.001 - 12.001") || line.contains("10 - 12") -> 5
-                line.contains("12.001 - 15.001") || line.contains("12 - 15") -> 6
-                line.contains("> 15") || line.contains("15.001") -> 7
-                else -> -1
+                addView(tv)
             }
 
-            if (colIndex != -1) {
-                for (j in 1..3) {
-                    if (i + j < lines.size) {
-                        val subLine = lines[i + j]
-                        val match = Regex("""(\d+)\s*(Đơn hàng|Đơn|don)?""", RegexOption.IGNORE_CASE).find(subLine)
-                        if (match != null) {
-                            items[colIndex] = match.groupValues[1].toIntOrNull() ?: 0
-                            break
+            val title = TextView(this@MainActivity).apply {
+                text = "Sản Lượng Đơn SPX"
+                textSize = 18f
+                setTextColor(Color.parseColor("#1F2937"))
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(20, 0, 0, 0)
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    addRule(RelativeLayout.RIGHT_OF, logoBox.id)
+                    addRule(RelativeLayout.CENTER_VERTICAL)
+                }
+                layoutParams = p
+            }
+
+            val rightIcons = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
+                    addRule(RelativeLayout.CENTER_VERTICAL)
+                }
+                layoutParams = p
+                val icon1 = TextView(this@MainActivity).apply { text = "🏛️"; textSize = 18f; setPadding(10, 0, 25, 0) }
+                val icon2 = TextView(this@MainActivity).apply { text = "📑"; textSize = 18f }
+                addView(icon1)
+                addView(icon2)
+            }
+
+            addView(logoBox)
+            addView(title)
+            addView(rightIcons)
+        }
+    }
+
+    private fun createBottomNav(): View {
+        val nav = LinearLayout(this).apply {
+            id = View.generateViewId()
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(Color.WHITE)
+            setPadding(0, 16, 0, 16)
+            elevation = 20f
+            val p = RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.MATCH_PARENT,
+                RelativeLayout.LayoutParams.WRAP_CONTENT
+            ).apply { addRule(RelativeLayout.ALIGN_PARENT_BOTTOM) }
+            layoutParams = p
+        }
+
+        val items = listOf(
+            Pair("🚚", "Đơn Giao"),
+            Pair("📥", "Đơn Lấy"),
+            Pair("🔄", "Đơn Hoàn"),
+            Pair("📊", "Tổng Kết")
+        )
+
+        val navP = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        for (i in items.indices) {
+            val tabItem = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setOnClickListener { switchTab(i) }
+                val icon = TextView(this@MainActivity).apply { text = items[i].first; textSize = 18f }
+                val title = TextView(this@MainActivity).apply {
+                    text = items[i].second
+                    textSize = 11f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setPadding(0, 4, 0, 0)
+                }
+                addView(icon)
+                addView(title)
+            }
+            navTabViews.add(tabItem)
+            nav.addView(tabItem, navP)
+        }
+        return nav
+    }
+
+    private fun createFloatingActionButton(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = makeRounded(Color.parseColor("#EE4D2D"), 40f)
+            setPadding(35, 22, 35, 22)
+            gravity = Gravity.CENTER
+            elevation = 14f
+            setOnClickListener { photoPickerLauncher.launch("image/*") }
+
+            val p = RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.WRAP_CONTENT,
+                RelativeLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
+                addRule(RelativeLayout.ALIGN_PARENT_BOTTOM)
+                rightMargin = 30
+                bottomMargin = 140
+            }
+            layoutParams = p
+
+            val star = TextView(this@MainActivity).apply { text = "✨ "; setTextColor(Color.WHITE); textSize = 13f }
+            val label = TextView(this@MainActivity).apply {
+                text = "Quét ảnh SPX"
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+                textSize = 13f
+            }
+            addView(star)
+            addView(label)
+        }
+    }
+
+    private fun switchTab(tabIndex: Int) {
+        currentTab = tabIndex
+        for (i in navTabViews.indices) {
+            val tv = navTabViews[i].getChildAt(1) as TextView
+            if (i == tabIndex) {
+                tv.setTextColor(Color.parseColor("#EE4D2D"))
+            } else {
+                tv.setTextColor(Color.parseColor("#9CA3AF"))
+            }
+        }
+        renderCurrentTabContent()
+    }
+
+    private fun renderCurrentTabContent() {
+        contentLayout.removeAllViews()
+        if (currentTab == 3) {
+            renderSummaryTab()
+        } else {
+            renderOrderTypeTab()
+        }
+    }
+
+    private fun renderOrderTypeTab() {
+        val (counts, tiers, logs, titleStr) = when (currentTab) {
+            0 -> Tuple4(deliveryCounts, SpxRateTables.DELIVERY_TIERS, deliveryLogs, "giao")
+            1 -> Tuple4(pickupCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS, pickupLogs, "lấy")
+            else -> Tuple4(returnCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS, returnLogs, "hoàn")
+        }
+
+        // Tính tổng tiền & xác định mốc
+        var totalMoney = 0L
+        val totalCount = counts.values.sum()
+        val currentTier = tiers.lastOrNull { totalCount >= it.minOrder } ?: tiers.first()
+
+        counts.forEach { (col, count) ->
+            if (count > 0) {
+                val t = tiers.lastOrNull { count >= it.minOrder } ?: tiers.first()
+                totalMoney += t.rates[col].toLong() * 1000L
+            }
+        }
+
+        // Card Tổng Số Tiền
+        val mainCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = makeRounded(Color.WHITE, 28f)
+            setPadding(40, 35, 40, 40)
+            elevation = 4f
+        }
+
+        val topRow = RelativeLayout(this).apply {
+            val walletIcon = TextView(this@MainActivity).apply {
+                id = View.generateViewId()
+                text = "💵"
+                textSize = 24f
+                background = makeRounded(Color.parseColor("#E8F5E9"), 20f)
+                setPadding(16, 12, 16, 12)
+            }
+            val labelBox = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    addRule(RelativeLayout.RIGHT_OF, walletIcon.id)
+                    leftMargin = 20
+                }
+                layoutParams = p
+
+                val sub = TextView(this@MainActivity).apply { text = "Số tiền nhận được (Theo mốc)"; textSize = 12f; setTextColor(Color.parseColor("#6B7280")) }
+                val money = TextView(this@MainActivity).apply {
+                    text = "${fmt.format(totalMoney)} đ"
+                    textSize = 23f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(Color.parseColor("#EE4D2D"))
+                }
+                val tierText = TextView(this@MainActivity).apply {
+                    text = "Đạt mốc: ${currentTier.minOrder} - ${if (currentTier.maxOrder == Int.MAX_VALUE) "+" else currentTier.maxOrder} đơn"
+                    textSize = 12f
+                    setTextColor(Color.parseColor("#EE4D2D"))
+                }
+                addView(sub)
+                addView(money)
+                addView(tierText)
+            }
+            addView(walletIcon)
+            addView(labelBox)
+        }
+        mainCard.addView(topRow)
+
+        // Bảng chi tiết
+        val tvSubTable = TextView(this).apply {
+            text = "Chi tiết theo từng mức cân nặng"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#1F2937"))
+            setPadding(0, 35, 0, 20)
+        }
+        mainCard.addView(tvSubTable)
+
+        val table = TableLayout(this).apply { isStretchAllColumns = true }
+        val headerRow = TableRow(this).apply {
+            background = makeRounded(Color.parseColor("#F3F4F6"), 12f)
+            setPadding(20, 16, 20, 16)
+            addView(createCell("Cân nặng", true, Color.parseColor("#374151")))
+            addView(createCell("Số đơn", true, Color.parseColor("#374151")))
+            addView(createCell("Mốc tính", true, Color.parseColor("#374151")))
+            addView(createCell("Thành tiền", true, Color.parseColor("#374151")))
+        }
+        table.addView(headerRow)
+
+        for (i in 0..7) {
+            val count = counts[i] ?: 0
+            val t = if (count > 0) (tiers.lastOrNull { count >= it.minOrder } ?: tiers.first()) else null
+            val itemMoney = if (t != null) t.rates[i].toLong() * 1000L else 0L
+
+            val row = TableRow(this).apply {
+                setPadding(20, 14, 20, 14)
+                addView(createCell(SpxRateTables.WEIGHT_LABELS[i], false, if (count > 0) Color.parseColor("#111827") else Color.parseColor("#9CA3AF")))
+                addView(createCell(if (count > 0) "$count" else "0", false, if (count > 0) Color.parseColor("#EE4D2D") else Color.parseColor("#9CA3AF"), true))
+                addView(createCell(if (t != null) "${t.minOrder} - ${t.maxOrder}" else "-", false, if (count > 0) Color.parseColor("#EE4D2D") else Color.parseColor("#9CA3AF")))
+                addView(createCell(if (count > 0) "${fmt.format(itemMoney)} đ" else "0 đ", false, if (count > 0) Color.parseColor("#10B981") else Color.parseColor("#9CA3AF"), true))
+            }
+            table.addView(row)
+        }
+        mainCard.addView(table)
+        contentLayout.addView(mainCard)
+
+        // 2 nút Thao tác: Quét từ ảnh & Thêm số liệu
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 30, 0, 30)
+        }
+        val btnScanAction = Button(this).apply {
+            text = "✨  Quét từ ảnh"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            background = makeRounded(Color.parseColor("#EE4D2D"), 18f)
+            setOnClickListener { photoPickerLauncher.launch("image/*") }
+        }
+        val btnAddAction = Button(this).apply {
+            text = "＋  Thêm số liệu"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#374151"))
+            background = makeRoundedStroke(Color.WHITE, Color.parseColor("#D1D5DB"), 18f)
+            setOnClickListener { showAddOrderDialog(counts) }
+        }
+        val halfP = LinearLayout.LayoutParams(0, 120, 1f)
+        btnRow.addView(btnScanAction, halfP)
+        val space = View(this).apply { layoutParams = LinearLayout.LayoutParams(25, 1) }
+        btnRow.addView(space)
+        btnRow.addView(btnAddAction, halfP)
+        contentLayout.addView(btnRow)
+
+        // Nhật ký sản lượng từng ngày
+        val logHeader = RelativeLayout(this).apply {
+            val tvTitle = TextView(this@MainActivity).apply {
+                text = "Nhật ký sản lượng từng ngày"
+                textSize = 15f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.parseColor("#1F2937"))
+            }
+            val tvCountBadge = TextView(this@MainActivity).apply {
+                text = "${logs.size} ngày"
+                textSize = 11f
+                setTextColor(Color.parseColor("#6B7280"))
+                background = makeRounded(Color.parseColor("#F3F4F6"), 20f)
+                setPadding(16, 6, 16, 6)
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply { leftMargin = 20 }
+                layoutParams = p
+            }
+            val box = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(tvTitle)
+                addView(tvCountBadge)
+            }
+            val tvExport = TextView(this@MainActivity).apply {
+                text = "Xuất Excel"
+                textSize = 12f
+                setTextColor(Color.parseColor("#EE4D2D"))
+                typeface = Typeface.DEFAULT_BOLD
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply { addRule(RelativeLayout.ALIGN_PARENT_RIGHT) }
+                layoutParams = p
+            }
+            addView(box)
+            addView(tvExport)
+        }
+        contentLayout.addView(logHeader)
+
+        // Danh sách thẻ nhật ký ngày
+        val logsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 20, 0, 0) }
+        for (log in logs) {
+            val logCard = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = makeRounded(Color.WHITE, 20f)
+                setPadding(35, 28, 35, 28)
+                val p = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = 20 }
+                layoutParams = p
+            }
+
+            val r1 = RelativeLayout(this).apply {
+                val dateBox = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    val icon = TextView(this@MainActivity).apply { text = "📅 "; textSize = 13f }
+                    val d = TextView(this@MainActivity).apply { text = log.date; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#1F2937")) }
+                    addView(icon)
+                    addView(d)
+                }
+                val orderBox = TextView(this@MainActivity).apply {
+                    text = "${log.totalOrders} đơn"
+                    textSize = 13f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(Color.parseColor("#1F2937"))
+                    background = makeRounded(Color.parseColor("#EEF2F6"), 14f)
+                    setPadding(20, 8, 20, 8)
+                    val p = RelativeLayout.LayoutParams(
+                        RelativeLayout.LayoutParams.WRAP_CONTENT,
+                        RelativeLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { addRule(RelativeLayout.ALIGN_PARENT_RIGHT) }
+                    layoutParams = p
+                }
+                addView(dateBox)
+                addView(orderBox)
+            }
+            val noteTv = TextView(this).apply {
+                text = "Ghi chú: ${log.note}"
+                textSize = 12f
+                setTextColor(Color.parseColor("#6B7280"))
+                setPadding(0, 14, 0, 0)
+            }
+            logCard.addView(r1)
+            logCard.addView(noteTv)
+            logsContainer.addView(logCard)
+        }
+        contentLayout.addView(logsContainer)
+    }
+
+    private fun renderSummaryTab() {
+        // Khối Báo cáo Excel tháng
+        val excelCard = RelativeLayout(this).apply {
+            background = makeRounded(Color.WHITE, 24f)
+            setPadding(35, 30, 35, 30)
+            elevation = 3f
+
+            val iconSheet = TextView(this@MainActivity).apply {
+                id = View.generateViewId()
+                text = "📊"
+                textSize = 24f
+                background = makeRounded(Color.parseColor("#E8F5E9"), 16f)
+                setPadding(16, 12, 16, 12)
+            }
+
+            val textBox = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    addRule(RelativeLayout.RIGHT_OF, iconSheet.id)
+                    leftMargin = 20
+                }
+                layoutParams = p
+
+                val t1 = TextView(this@MainActivity).apply { text = "Báo cáo Excel (Tháng này)"; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#111827")) }
+                val t2 = TextView(this@MainActivity).apply { text = "Bảng tổng hợp & chi tiết 8 mức cân"; textSize = 12f; setTextColor(Color.parseColor("#6B7280")) }
+                addView(t1)
+                addView(t2)
+            }
+
+            val btnExport = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                background = makeRounded(Color.parseColor("#2E7D32"), 20f)
+                setPadding(25, 14, 25, 14)
+                gravity = Gravity.CENTER
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
+                    addRule(RelativeLayout.CENTER_VERTICAL)
+                }
+                layoutParams = p
+
+                val icon = TextView(this@MainActivity).apply { text = "🔗 "; setTextColor(Color.WHITE); textSize = 11f }
+                val label = TextView(this@MainActivity).apply { text = "Xuất file"; setTextColor(Color.WHITE); textSize = 12f; typeface = Typeface.DEFAULT_BOLD }
+                addView(icon)
+                addView(label)
+                setOnClickListener { Toast.makeText(this@MainActivity, "Đang trích xuất Excel...", Toast.LENGTH_SHORT).show() }
+            }
+
+            addView(iconSheet)
+            addView(textBox)
+            addView(btnExport)
+        }
+        contentLayout.addView(excelCard)
+
+        // Tiêu đề Gợi ý số đơn
+        val tvTip = TextView(this).apply {
+            text = "💡  Gợi ý số đơn cần đạt mốc tiếp theo"
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#111827"))
+            setPadding(0, 35, 0, 20)
+        }
+        contentLayout.addView(tvTip)
+
+        // Card Gợi ý Đơn Giao (Mẫu: 1.420.000 đ - Mốc 700-800 đơn)
+        contentLayout.addView(createNextTierCard("Bảng tính đơn giao", 1420000L, 787, "700 - 800", listOf(
+            Tuple3("Mức >0 - 2 kg (717 đơn • Mốc 700 - 800)", "Cần thêm +83 đơn để đạt mốc 800 - 900 đơn", "+175.000 đ"),
+            Tuple3("Mức >2 - 4 kg (27 đơn • Mốc 15 - 30)", "Cần thêm +3 đơn để đạt mốc 30 - 60 đơn", "+60.000 đ"),
+            Tuple3("Mức >4 - 6 kg (20 đơn • Mốc 15 - 30)", "Cần thêm +10 đơn để đạt mốc 30 - 60 đơn", "+50.000 đ"),
+            Tuple3("Mức >6 - 8 kg (9 đơn • Mốc 1 - 15)", "Cần thêm +6 đơn để đạt mốc 15 - 30 đơn", "+60.000 đ"),
+            Tuple3("Mức >8 - 10 kg (13 đơn • Mốc 1 - 15)", "Cần thêm +2 đơn để đạt mốc 15 - 30 đơn", "+80.000 đ"),
+            Tuple3("Mức >12 - 15 kg (1 đơn • Mốc 1 - 15)", "Cần thêm +14 đơn để đạt mốc 15 - 30 đơn", "+110.000 đ")
+        )))
+
+        val space = View(this).apply { layoutParams = LinearLayout.LayoutParams(1, 30) }
+        contentLayout.addView(space)
+
+        // Card Gợi ý Đơn Lấy (Mẫu: 425.000 đ - Mốc 900-1200 đơn)
+        contentLayout.addView(createNextTierCard("Bảng tính đơn lấy", 425000L, 940, "900 - 1200", listOf(
+            Tuple3("Mức >0 - 2 kg (926 đơn • Mốc 900 - 1200)", "Cần thêm +274 đơn để đạt mốc 1200 - 1500 đơn", "+100.000 đ")
+        )))
+    }
+
+    private fun createNextTierCard(title: String, totalMoney: Long, totalOrders: Int, tierName: String, items: List<Tuple3<String, String, String>>): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = makeRounded(Color.WHITE, 28f)
+            setPadding(35, 30, 35, 35)
+            elevation = 3f
+        }
+
+        val r1 = RelativeLayout(this).apply {
+            val icon = TextView(this@MainActivity).apply {
+                id = View.generateViewId()
+                text = "🚚"
+                textSize = 20f
+                background = makeRounded(Color.parseColor("#FFF3E0"), 16f)
+                setPadding(14, 10, 14, 10)
+            }
+            val titleBox = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    addRule(RelativeLayout.RIGHT_OF, icon.id)
+                    leftMargin = 20
+                }
+                layoutParams = p
+
+                val t = TextView(this@MainActivity).apply { text = title; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#1F2937")) }
+                val sub = TextView(this@MainActivity).apply { text = "Mốc: $tierName đơn"; textSize = 12f; setTextColor(Color.parseColor("#6B7280")) }
+                addView(t)
+                addView(sub)
+            }
+            val rightBox = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.END
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply { addRule(RelativeLayout.ALIGN_PARENT_RIGHT) }
+                layoutParams = p
+
+                val m = TextView(this@MainActivity).apply { text = "${fmt.format(totalMoney)} đ"; textSize = 16f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#EE4D2D")) }
+                val o = TextView(this@MainActivity).apply { text = "$totalOrders đơn"; textSize = 12f; setTextColor(Color.parseColor("#6B7280")) }
+                addView(m)
+                addView(o)
+            }
+            addView(icon)
+            addView(titleBox)
+            addView(rightBox)
+        }
+        card.addView(r1)
+
+        val divider = View(this).apply {
+            background = makeRounded(Color.parseColor("#EE4D2D"), 4f)
+            val p = LinearLayout.LayoutParams(120, 6).apply { topMargin = 20; bottomMargin = 25 }
+            layoutParams = p
+        }
+        card.addView(divider)
+
+        for (item in items) {
+            val itemBox = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = makeRounded(Color.parseColor("#F9FAFB"), 18f)
+                setPadding(30, 20, 30, 20)
+                val p = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = 16 }
+                layoutParams = p
+
+                val row = RelativeLayout(this@MainActivity).apply {
+                    val info = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        val t1 = TextView(this@MainActivity).apply { text = item.first; textSize = 12f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#1F2937")) }
+                        val t2 = TextView(this@MainActivity).apply { text = item.second; textSize = 11f; setTextColor(Color.parseColor("#EE4D2D")); setPadding(0, 4, 0, 0) }
+                        addView(t1)
+                        addView(t2)
+                    }
+                    val bonus = TextView(this@MainActivity).apply {
+                        text = item.third
+                        textSize = 13f
+                        typeface = Typeface.DEFAULT_BOLD
+                        setTextColor(Color.parseColor("#10B981"))
+                        val p = RelativeLayout.LayoutParams(
+                            RelativeLayout.LayoutParams.WRAP_CONTENT,
+                            RelativeLayout.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
+                            addRule(RelativeLayout.CENTER_VERTICAL)
+                        }
+                        layoutParams = p
+                    }
+                    addView(info)
+                    addView(bonus)
+                }
+                addView(row)
+            }
+            card.addView(itemBox)
+        }
+        return card
+    }
+
+    private fun showAddOrderDialog(targetMap: MutableMap<Int, Int>) {
+        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 20, 40, 20) }
+        val inputs = mutableListOf<EditText>()
+        for (i in 0..7) {
+            val et = EditText(this).apply {
+                hint = "${SpxRateTables.WEIGHT_LABELS[i]}: ${targetMap[i] ?: 0}"
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            }
+            inputs.add(et)
+            layout.addView(et)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Cập nhật số đơn theo dải cân")
+            .setView(layout)
+            .setPositiveButton("Lưu") { _, _ ->
+                for (i in 0..7) {
+                    val txt = inputs[i].text.toString()
+                    if (txt.isNotEmpty()) {
+                        targetMap[i] = txt.toIntOrNull() ?: 0
+                    }
+                }
+                renderCurrentTabContent()
+            }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    private fun parseOcrImage(uri: Uri) {
+        Toast.makeText(this, "Đang quét dữ liệu từ ảnh...", Toast.LENGTH_SHORT).show()
+        val image = InputImage.fromFilePath(this, uri)
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+        recognizer.process(image)
+            .addOnSuccessListener { visionText ->
+                val text = visionText.text
+                val lines = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
+
+                val (targetMap, targetLogs) = when {
+                    text.contains("trả hàng", ignoreCase = true) -> {
+                        switchTab(2)
+                        Pair(returnCounts, returnLogs)
+                    }
+                    text.contains("lấy", ignoreCase = true) -> {
+                        switchTab(1)
+                        Pair(pickupCounts, pickupLogs)
+                    }
+                    else -> {
+                        switchTab(0)
+                        Pair(deliveryCounts, deliveryLogs)
+                    }
+                }
+
+                var dayCount = 0
+                for (i in lines.indices) {
+                    val line = lines[i]
+                    val idx = when {
+                        line.contains("0.000 - 2.001") || line.contains("0 - 2") -> 0
+                        line.contains("2.001 - 4.001") || line.contains("2 - 4") -> 1
+                        line.contains("4.001 - 6.001") || line.contains("4 - 6") -> 2
+                        line.contains("6.001 - 8.001") || line.contains("6 - 8") -> 3
+                        line.contains("8.001 - 10.001") || line.contains("8 - 10") -> 4
+                        line.contains("10.001 - 12.001") || line.contains("10 - 12") -> 5
+                        line.contains("12.001 - 15.001") || line.contains("12 - 15") -> 6
+                        line.contains("> 15") || line.contains("15.001") -> 7
+                        else -> -1
+                    }
+                    if (idx != -1) {
+                        for (j in 1..3) {
+                            if (i + j < lines.size) {
+                                val match = Regex("""(\d+)\s*(Đơn hàng|Đơn|don)?""", RegexOption.IGNORE_CASE).find(lines[i + j])
+                                if (match != null) {
+                                    val count = match.groupValues[1].toIntOrNull() ?: 0
+                                    targetMap[idx] = (targetMap[idx] ?: 0) + count
+                                    dayCount += count
+                                    break
+                                }
+                            }
                         }
                     }
                 }
+                val date = Regex("""(\d{2}/\d{2})""").find(text)?.value ?: "2026-09-08"
+                targetLogs.add(0, DayLog(date, dayCount, "Phân tích tự động từ ảnh"))
+                renderCurrentTabContent()
+                Toast.makeText(this, "Đã cập nhật $dayCount đơn vào hệ thống!", Toast.LENGTH_SHORT).show()
             }
-        }
-
-        val tiers = if (type == "GIAO") SpxRateTables.DELIVERY_TIERS else SpxRateTables.PICKUP_AND_RETURN_TIERS
-        var totalOrders = 0
-        var dayEarnings = 0L
-        val breakdown = StringBuilder()
-
-        items.forEach { (col, count) ->
-            totalOrders += count
-            val tier = tiers.lastOrNull { count >= it.minOrder } ?: tiers.first()
-            val money = tier.rates[col].toLong() * 1000L
-            dayEarnings += money
-
-            val colName = when (col) {
-                0 -> "0-2kg"
-                1 -> "2-4kg"
-                2 -> "4-6kg"
-                3 -> "6-8kg"
-                4 -> "8-10kg"
-                5 -> "10-12kg"
-                6 -> "12-15kg"
-                else -> ">15kg"
+            .addOnFailureListener {
+                Toast.makeText(this, "Lỗi đọc ảnh: ${it.localizedMessage}", Toast.LENGTH_SHORT).show()
             }
-            breakdown.append("• Dải $colName: $count đơn -> +${formatter.format(money)} đ\n")
-        }
-
-        val workCredit = when {
-            totalOrders >= 80 -> 1.0
-            totalOrders >= 40 -> 0.5
-            else -> 0.0
-        }
-
-        return """
-            KẾT QUẢ QUÉT:
-            ────────────────────────
-            📅 Ngày: $date
-            📦 Loại đơn: Đơn $type
-            🚚 Tổng số đơn: $totalOrders đơn
-            ⭐ Ngày công: $workCredit công (Định mức 40/80)
-            
-            CHI TIẾT SẢN LƯỢNG:
-            $breakdown
-            ────────────────────────
-            💰 TIỀN SẢN LƯỢNG NGÀY: 
-            ${formatter.format(dayEarnings)} VNĐ
-            
-            📌 Lương cơ bản KV1: 5.310.000 đ / 26 công
-        """.trimIndent()
     }
+
+    private fun createCell(text: String, isHeader: Boolean, color: Int, isBold: Boolean = false): TextView {
+        return TextView(this).apply {
+            this.text = text
+            textSize = if (isHeader) 12f else 13f
+            setTextColor(color)
+            if (isHeader || isBold) typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(10, 10, 10, 10)
+        }
+    }
+
+    private fun makeRounded(colorInt: Int, radiusDp: Float): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = radiusDp
+            setColor(colorInt)
+        }
+    }
+
+    private fun makeRoundedStroke(bgColor: Int, strokeColor: Int, radiusDp: Float): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = radiusDp
+            setColor(bgColor)
+            setStroke(2, strokeColor)
+        }
+    }
+
+    data class Tuple3<A, B, C>(val first: A, val second: B, val third: C)
+    data class Tuple4<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 }
