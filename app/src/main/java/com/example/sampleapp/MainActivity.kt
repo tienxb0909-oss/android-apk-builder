@@ -6,6 +6,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -96,6 +97,9 @@ object SpxRateTables {
         "KV3" to 4140000L,
         "KV4" to 3700000L
     )
+
+    val RANKS = listOf("Chưa xếp hạng", "Đồng", "Bạc", "Vàng", "Bạch kim", "Kim cương")
+    val RANK_PERCENT = listOf(0.0, 0.10, 0.15, 0.20, 0.22, 0.26)
 }
 
 class MainActivity : AppCompatActivity() {
@@ -103,6 +107,11 @@ class MainActivity : AppCompatActivity() {
     private val fmt = DecimalFormat("#,###")
     private var currentTab = 0
     private var selectedRegion = "KV1"
+
+    // THIẾT LẬP THÊM RANK & TIỀN KHOẢNG CÁCH
+    private var selectedRankIndex = 0
+    private var hubDistanceMoney = 0L
+    private var deliveryDistanceMoney = 0L
 
     private val deliveryCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
     private val pickupCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
@@ -141,11 +150,13 @@ class MainActivity : AppCompatActivity() {
                 addRule(RelativeLayout.ABOVE, bottomNav.id)
             }
             layoutParams = p
+            isFillViewport = true
         }
 
         contentLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(30, 20, 30, 160)
+            // Đệm đáy 220dp giúp cuộn thoải mái, không bị nút quét ảnh che khuất
+            setPadding(30, 20, 30, 220)
         }
         contentScrollView.addView(contentLayout)
         rootLayout.addView(contentScrollView)
@@ -285,6 +296,9 @@ class MainActivity : AppCompatActivity() {
                     pickupCounts.keys.forEach { pickupCounts[it] = 0 }
                     returnCounts.keys.forEach { returnCounts[it] = 0 }
                     dailyRecords.clear()
+                    hubDistanceMoney = 0L
+                    deliveryDistanceMoney = 0L
+                    selectedRankIndex = 0
                     Toast.makeText(this, "Đã xóa toàn bộ dữ liệu ứng dụng", Toast.LENGTH_SHORT).show()
                 }
                 renderCurrentTabContent()
@@ -568,20 +582,18 @@ class MainActivity : AppCompatActivity() {
                 addView(tvTitle)
                 addView(tvCountBadge)
             }
-            val tvExport = TextView(this@MainActivity).apply {
-                text = "Xuất Excel"
-                textSize = 12f
+            val tvTipEdit = TextView(this@MainActivity).apply {
+                text = "(Chạm để Sửa/Xóa)"
+                textSize = 11f
                 setTextColor(Color.parseColor("#EE4D2D"))
-                typeface = Typeface.DEFAULT_BOLD
                 val p = RelativeLayout.LayoutParams(
                     RelativeLayout.LayoutParams.WRAP_CONTENT,
                     RelativeLayout.LayoutParams.WRAP_CONTENT
                 ).apply { addRule(RelativeLayout.ALIGN_PARENT_RIGHT) }
                 layoutParams = p
-                setOnClickListener { Toast.makeText(this@MainActivity, "Đang xuất dữ liệu...", Toast.LENGTH_SHORT).show() }
             }
             addView(box)
-            addView(tvExport)
+            addView(tvTipEdit)
         }
         contentLayout.addView(logHeader)
 
@@ -614,6 +626,8 @@ class MainActivity : AppCompatActivity() {
                     ).apply { bottomMargin = 20 }
                     layoutParams = p
                     elevation = 2f
+                    // CHẠM ĐỂ SỬA HOẶC XÓA NGÀY
+                    setOnClickListener { showEditDayDialog(date, record) }
                 }
 
                 val r1 = RelativeLayout(this).apply {
@@ -674,7 +688,16 @@ class MainActivity : AppCompatActivity() {
         val pickupMoney = calculateTierTotal(pickupCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
         val returnMoney = calculateTierTotal(returnCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
         val totalProductEarnings = deliveryMoney + pickupMoney + returnMoney
-        val grandTotal = totalBaseSalary + totalProductEarnings
+
+        // TIỀN THƯỞNG RANK (% TRÊN TỔNG SẢN LƯỢNG)
+        val rankPercent = SpxRateTables.RANK_PERCENT[selectedRankIndex]
+        val rankBonusMoney = (totalProductEarnings * rankPercent).toLong()
+
+        // TỔNG TIỀN KHOẢNG CÁCH
+        val totalDistanceMoney = hubDistanceMoney + deliveryDistanceMoney
+
+        // TỔNG LƯƠNG ĐẦY ĐỦ TẤT CẢ CÁC KHOẢN
+        val grandTotal = totalBaseSalary + totalProductEarnings + rankBonusMoney + totalDistanceMoney
 
         val grandCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -684,7 +707,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val tvTitleGrand = TextView(this).apply {
-            text = "TỔNG THU NHẬP LŨY KẾ THÁNG ($selectedRegion)"
+            text = "TỔNG THU NHẬP CẢ THÁNG ($selectedRegion)"
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#94A3B8"))
@@ -698,29 +721,155 @@ class MainActivity : AppCompatActivity() {
         }
 
         val detailBase = TextView(this).apply {
-            text = "• Tổng lương ngày công ($totalWorkShifts công): ${fmt.format(totalBaseSalary)} đ"
+            text = "• Lương cơ bản ($totalWorkShifts công): ${fmt.format(totalBaseSalary)} đ"
             textSize = 13f
             setTextColor(Color.WHITE)
         }
         val detailProd = TextView(this).apply {
-            text = "• Tổng tiền theo mốc sản lượng: ${fmt.format(totalProductEarnings)} đ"
+            text = "• Lương sản lượng đơn hàng: ${fmt.format(totalProductEarnings)} đ"
             textSize = 13f
             setTextColor(Color.parseColor("#4ADE80"))
             setPadding(0, 6, 0, 0)
         }
-        val ruleNote = TextView(this).apply {
-            text = "ℹ️ Công ngày: Giao (x1) + Hoàn (x1) + Lấy (/6). ≥60 đơn: 1 công, ≥30 đơn: 0.5 công."
-            textSize = 11f
-            setTextColor(Color.parseColor("#94A3B8"))
-            setPadding(0, 16, 0, 0)
+        val detailRank = TextView(this).apply {
+            val rankName = SpxRateTables.RANKS[selectedRankIndex]
+            text = "• Thưởng thứ hạng ($rankName +${(rankPercent * 100).toInt()}%): ${fmt.format(rankBonusMoney)} đ"
+            textSize = 13f
+            setTextColor(Color.parseColor("#FBBF24"))
+            setPadding(0, 6, 0, 0)
+        }
+        val detailDist = TextView(this).apply {
+            text = "• Tiền khoảng cách (Hub + Đơn giao): ${fmt.format(totalDistanceMoney)} đ"
+            textSize = 13f
+            setTextColor(Color.parseColor("#A78BFA"))
+            setPadding(0, 6, 0, 0)
         }
 
         grandCard.addView(tvTitleGrand)
         grandCard.addView(tvTotalMoney)
         grandCard.addView(detailBase)
         grandCard.addView(detailProd)
-        grandCard.addView(ruleNote)
+        grandCard.addView(detailRank)
+        grandCard.addView(detailDist)
         contentLayout.addView(grandCard)
+
+        // KHUNG CÀI ĐẶT RANK & TIỀN KHOẢNG CÁCH
+        val extraCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = makeRounded(Color.WHITE, 24f)
+            setPadding(35, 30, 35, 30)
+            val p = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = 30 }
+            layoutParams = p
+            elevation = 3f
+        }
+
+        val tvExtraTitle = TextView(this).apply {
+            text = "🎖️ Cài đặt Rank & Khoảng cách phụ cấp"
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#1F2937"))
+        }
+        extraCard.addView(tvExtraTitle)
+
+        // 1. CHỌN RANK
+        val rowRank = RelativeLayout(this).apply {
+            setPadding(0, 25, 0, 15)
+            val l = TextView(this@MainActivity).apply {
+                text = "Thứ hạng (Rank):"
+                textSize = 13f
+                setTextColor(Color.parseColor("#4B5563"))
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply { addRule(RelativeLayout.CENTER_VERTICAL) }
+                layoutParams = p
+            }
+            val btnRank = TextView(this@MainActivity).apply {
+                text = "🏆 ${SpxRateTables.RANKS[selectedRankIndex]} (${(SpxRateTables.RANK_PERCENT[selectedRankIndex] * 100).toInt()}%)"
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.parseColor("#D97706"))
+                background = makeRounded(Color.parseColor("#FEF3C7"), 14f)
+                setPadding(20, 12, 20, 12)
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply { addRule(RelativeLayout.ALIGN_PARENT_RIGHT) }
+                layoutParams = p
+                setOnClickListener { showRankPickerDialog() }
+            }
+            addView(l)
+            addView(btnRank)
+        }
+        extraCard.addView(rowRank)
+
+        // 2. NHẬP TIỀN KHOẢNG CÁCH HUB
+        val rowHub = RelativeLayout(this).apply {
+            setPadding(0, 10, 0, 10)
+            val l = TextView(this@MainActivity).apply {
+                text = "Khoảng cách Hub:"
+                textSize = 13f
+                setTextColor(Color.parseColor("#4B5563"))
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply { addRule(RelativeLayout.CENTER_VERTICAL) }
+                layoutParams = p
+            }
+            val tvHubVal = TextView(this@MainActivity).apply {
+                text = if (hubDistanceMoney > 0) "${fmt.format(hubDistanceMoney)} đ" else "Nhập số tiền"
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.parseColor("#2563EB"))
+                background = makeRounded(Color.parseColor("#EFF6FF"), 14f)
+                setPadding(20, 12, 20, 12)
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply { addRule(RelativeLayout.ALIGN_PARENT_RIGHT) }
+                layoutParams = p
+                setOnClickListener { showDistanceInputDialog("Nhập Tiền Khoảng Cách Hub", hubDistanceMoney) { hubDistanceMoney = it; renderCurrentTabContent() } }
+            }
+            addView(l)
+            addView(tvHubVal)
+        }
+        extraCard.addView(rowHub)
+
+        // 3. NHẬP TIỀN KHOẢNG CÁCH ĐƠN GIAO
+        val rowDeliveryDist = RelativeLayout(this).apply {
+            setPadding(0, 10, 0, 10)
+            val l = TextView(this@MainActivity).apply {
+                text = "Khoảng cách đơn giao:"
+                textSize = 13f
+                setTextColor(Color.parseColor("#4B5563"))
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply { addRule(RelativeLayout.CENTER_VERTICAL) }
+                layoutParams = p
+            }
+            val tvDelivVal = TextView(this@MainActivity).apply {
+                text = if (deliveryDistanceMoney > 0) "${fmt.format(deliveryDistanceMoney)} đ" else "Nhập số tiền"
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.parseColor("#2563EB"))
+                background = makeRounded(Color.parseColor("#EFF6FF"), 14f)
+                setPadding(20, 12, 20, 12)
+                val p = RelativeLayout.LayoutParams(
+                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    RelativeLayout.LayoutParams.WRAP_CONTENT
+                ).apply { addRule(RelativeLayout.ALIGN_PARENT_RIGHT) }
+                layoutParams = p
+                setOnClickListener { showDistanceInputDialog("Nhập Tiền Khoảng Cách Đơn Giao", deliveryDistanceMoney) { deliveryDistanceMoney = it; renderCurrentTabContent() } }
+            }
+            addView(l)
+            addView(tvDelivVal)
+        }
+        extraCard.addView(rowDeliveryDist)
+        contentLayout.addView(extraCard)
 
         val tvTip = TextView(this).apply {
             text = "💡 Gợi ý số đơn cần đạt mốc tiếp theo"
@@ -738,6 +887,110 @@ class MainActivity : AppCompatActivity() {
         val space = View(this).apply { layoutParams = LinearLayout.LayoutParams(1, 30) }
         contentLayout.addView(space)
         contentLayout.addView(pickupCard)
+    }
+
+    private fun showRankPickerDialog() {
+        val options = arrayOf(
+            "Chưa xếp hạng (Thưởng 0%)",
+            "Đồng (Thưởng +10% sản lượng)",
+            "Bạc (Thưởng +15% sản lượng)",
+            "Vàng (Thưởng +20% sản lượng)",
+            "Bạch kim (Thưởng +22% sản lượng)",
+            "Kim cương (Thưởng +26% sản lượng)"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Chọn Xếp Hạng Của Bạn")
+            .setItems(options) { _, which ->
+                selectedRankIndex = which
+                renderCurrentTabContent()
+                Toast.makeText(this, "Đã chọn hạng: ${SpxRateTables.RANKS[which]}", Toast.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
+    private fun showDistanceInputDialog(title: String, currentVal: Long, onSave: (Long) -> Unit) {
+        val et = EditText(this).apply {
+            hint = "Nhập số tiền (VNĐ)"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            if (currentVal > 0) setText("$currentVal")
+            setPadding(40, 30, 40, 30)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(et)
+            .setPositiveButton("Lưu") { _, _ ->
+                val amount = et.text.toString().trim().toLongOrNull() ?: 0L
+                onSave(amount)
+            }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    // CHỈNH SỬA HOẶC XÓA TỪNG NGÀY
+    private fun showEditDayDialog(date: String, record: DayPerformance) {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 20, 40, 20)
+        }
+
+        val etDelivery = EditText(this).apply {
+            hint = "Số đơn giao"
+            setText("${record.delivery}")
+            inputType = InputType.TYPE_CLASS_NUMBER
+        }
+        val etPickup = EditText(this).apply {
+            hint = "Số đơn lấy"
+            setText("${record.pickup}")
+            inputType = InputType.TYPE_CLASS_NUMBER
+        }
+        val etReturns = EditText(this).apply {
+            hint = "Số đơn hoàn"
+            setText("${record.returns}")
+            inputType = InputType.TYPE_CLASS_NUMBER
+        }
+
+        layout.addView(TextView(this).apply { text = "Chỉnh sửa số liệu ngày $date:"; typeface = Typeface.DEFAULT_BOLD; setPadding(0, 0, 0, 15) })
+        layout.addView(TextView(this).apply { text = "Đơn giao:"; textSize = 12f; setTextColor(Color.GRAY) })
+        layout.addView(etDelivery)
+        layout.addView(TextView(this).apply { text = "Đơn lấy:"; textSize = 12f; setTextColor(Color.GRAY) })
+        layout.addView(etPickup)
+        layout.addView(TextView(this).apply { text = "Đơn hoàn:"; textSize = 12f; setTextColor(Color.GRAY) })
+        layout.addView(etReturns)
+
+        AlertDialog.Builder(this)
+            .setTitle("Tùy chọn ngày $date")
+            .setView(layout)
+            .setPositiveButton("Lưu") { _, _ ->
+                val newDel = etDelivery.text.toString().toIntOrNull() ?: record.delivery
+                val newPick = etPickup.text.toString().toIntOrNull() ?: record.pickup
+                val newRet = etReturns.text.toString().toIntOrNull() ?: record.returns
+
+                val diffDel = newDel - record.delivery
+                val diffPick = newPick - record.pickup
+                val diffRet = newRet - record.returns
+
+                deliveryCounts[0] = ((deliveryCounts[0] ?: 0) + diffDel).coerceAtLeast(0)
+                pickupCounts[0] = ((pickupCounts[0] ?: 0) + diffPick).coerceAtLeast(0)
+                returnCounts[0] = ((returnCounts[0] ?: 0) + diffRet).coerceAtLeast(0)
+
+                record.delivery = newDel
+                record.pickup = newPick
+                record.returns = newRet
+
+                renderCurrentTabContent()
+                Toast.makeText(this, "Đã cập nhật ngày $date", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Xóa ngày này") { _, _ ->
+                deliveryCounts[0] = ((deliveryCounts[0] ?: 0) - record.delivery).coerceAtLeast(0)
+                pickupCounts[0] = ((pickupCounts[0] ?: 0) - record.pickup).coerceAtLeast(0)
+                returnCounts[0] = ((returnCounts[0] ?: 0) - record.returns).coerceAtLeast(0)
+
+                dailyRecords.remove(date)
+                renderCurrentTabContent()
+                Toast.makeText(this, "Đã xóa ngày $date (các ngày khác giữ nguyên)", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Hủy", null)
+            .show()
     }
 
     private fun calculateTierTotal(counts: Map<Int, Int>, tiers: List<RateTier>): Long {
@@ -904,7 +1157,7 @@ class MainActivity : AppCompatActivity() {
         for (i in 0..7) {
             val et = EditText(this).apply {
                 hint = "${SpxRateTables.WEIGHT_LABELS[i]} (Hiện có: ${targetMap[i] ?: 0})"
-                inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                inputType = InputType.TYPE_CLASS_NUMBER
             }
             inputs.add(et)
             layout.addView(et)
@@ -960,7 +1213,6 @@ class MainActivity : AppCompatActivity() {
             }
     }
 
-    // THUẬT TOÁN ĐỐI SOÁT CHUẨN XÁC VỚI TIÊU ĐỀ TỔNG ĐƠN CỦA SPX
     private fun executeDataImport(visionText: Text, tabIndex: Int) {
         val (targetMap, tiers) = when (tabIndex) {
             0 -> Pair(deliveryCounts, SpxRateTables.DELIVERY_TIERS)
@@ -982,7 +1234,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 1. Quét tìm con số tổng chính thức từ tiêu đề "Tổng ... đơn hàng"
         var officialHeaderTotal = -1
         for (item in allLines) {
             val m = Regex("""Tổng\s*(\d+)\s*đơn""", RegexOption.IGNORE_CASE).find(item.text)
@@ -1011,7 +1262,6 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (labelItem != null) {
-                // Tăng giới hạn khoảng cách Y lên 130px để bắt trọn vẹn số đơn trên màn hình dài
                 val matchingCountItem = allLines.filter { item ->
                     Math.abs(item.y - labelItem.y) <= 130 && item.x > labelItem.x
                 }.minByOrNull { Math.abs(it.y - labelItem.y) }
@@ -1028,7 +1278,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 2. Tự động bù đơn nếu ảnh cuộn bị khuất các mức cân phía đáy
         if (officialHeaderTotal != -1 && officialHeaderTotal > dayCount) {
             val diff = officialHeaderTotal - dayCount
             targetMap[0] = (targetMap[0] ?: 0) + diff
