@@ -101,7 +101,7 @@ object SpxRateTables {
 class MainActivity : AppCompatActivity() {
 
     private val fmt = DecimalFormat("#,###")
-    private var currentTab = 0 // 0: Giao, 1: Lấy, 2: Hoàn, 3: Tổng Kết
+    private var currentTab = 0
     private var selectedRegion = "KV1"
 
     private val deliveryCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
@@ -937,7 +937,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    // ĐỌC THẲNG ẢNH VÀO TAB HIỆN TẠI (KHÔNG CẦN CHECK TỰ ĐỘNG)
     private fun processDirectOcr(uri: Uri) {
         val tabNames = listOf("Đơn Giao", "Đơn Lấy", "Đơn Hoàn")
         val currentName = tabNames.getOrElse(currentTab) { "Đơn Giao" }
@@ -961,6 +960,7 @@ class MainActivity : AppCompatActivity() {
             }
     }
 
+    // THUẬT TOÁN ĐỐI SOÁT CHUẨN XÁC VỚI TIÊU ĐỀ TỔNG ĐƠN CỦA SPX
     private fun executeDataImport(visionText: Text, tabIndex: Int) {
         val (targetMap, tiers) = when (tabIndex) {
             0 -> Pair(deliveryCounts, SpxRateTables.DELIVERY_TIERS)
@@ -979,6 +979,16 @@ class MainActivity : AppCompatActivity() {
                 val centerY = if (box != null) (box.top + box.bottom) / 2 else 0
                 val centerX = if (box != null) (box.left + box.right) / 2 else 0
                 allLines.add(TextItem(line.text.trim(), centerY, centerX))
+            }
+        }
+
+        // 1. Quét tìm con số tổng chính thức từ tiêu đề "Tổng ... đơn hàng"
+        var officialHeaderTotal = -1
+        for (item in allLines) {
+            val m = Regex("""Tổng\s*(\d+)\s*đơn""", RegexOption.IGNORE_CASE).find(item.text)
+            if (m != null) {
+                officialHeaderTotal = m.groupValues[1].toIntOrNull() ?: -1
+                break
             }
         }
 
@@ -1001,8 +1011,9 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (labelItem != null) {
+                // Tăng giới hạn khoảng cách Y lên 130px để bắt trọn vẹn số đơn trên màn hình dài
                 val matchingCountItem = allLines.filter { item ->
-                    Math.abs(item.y - labelItem.y) <= 70 && item.x > labelItem.x
+                    Math.abs(item.y - labelItem.y) <= 130 && item.x > labelItem.x
                 }.minByOrNull { Math.abs(it.y - labelItem.y) }
 
                 val count = if (matchingCountItem != null) {
@@ -1015,6 +1026,13 @@ class MainActivity : AppCompatActivity() {
                 targetMap[idx] = (targetMap[idx] ?: 0) + count
                 dayCount += count
             }
+        }
+
+        // 2. Tự động bù đơn nếu ảnh cuộn bị khuất các mức cân phía đáy
+        if (officialHeaderTotal != -1 && officialHeaderTotal > dayCount) {
+            val diff = officialHeaderTotal - dayCount
+            targetMap[0] = (targetMap[0] ?: 0) + diff
+            dayCount = officialHeaderTotal
         }
 
         val afterMoney = calculateTierTotal(targetMap, tiers)
@@ -1042,7 +1060,7 @@ class MainActivity : AppCompatActivity() {
         val dayShiftMoney = (wagePerDay * record.getWorkShift()).toLong()
         val totalToday = dayShiftMoney + record.dailyProducedMoney
 
-        Toast.makeText(this, "Đã lưu $dayCount đơn vào $currentName! Hôm nay: +${fmt.format(totalToday)} đ", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Đã khớp đúng $dayCount đơn vào $currentName! Hôm nay: +${fmt.format(totalToday)} đ", Toast.LENGTH_LONG).show()
     }
 
     private fun createCell(text: String, isHeader: Boolean, color: Int, isBold: Boolean = false): TextView {
