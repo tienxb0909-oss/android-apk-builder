@@ -25,12 +25,16 @@ data class RateTier(val minOrder: Int, val maxOrder: Int, val rates: IntArray)
 
 data class DayPerformance(
     val date: String,
-    var delivery: Int = 0,
-    var pickup: Int = 0,
-    var returns: Int = 0,
+    var deliveryByWeight: IntArray = IntArray(8),
+    var pickupByWeight: IntArray = IntArray(8),
+    var returnsByWeight: IntArray = IntArray(8),
     var dailyProducedMoney: Long = 0L
 ) {
-    fun getPoints(): Double = (delivery * 1.0) + (returns * 1.0) + (pickup / 6.0)
+    fun getDeliveryCount(): Int = deliveryByWeight.sum()
+    fun getPickupCount(): Int = pickupByWeight.sum()
+    fun getReturnsCount(): Int = returnsByWeight.sum()
+
+    fun getPoints(): Double = (getDeliveryCount() * 1.0) + (getReturnsCount() * 1.0) + (getPickupCount() / 6.0)
 
     fun getWorkShift(): Double {
         val pts = getPoints()
@@ -108,14 +112,13 @@ class MainActivity : AppCompatActivity() {
     private var currentTab = 0
     private var selectedRegion = "KV1"
 
-    // THIẾT LẬP THÊM RANK & TIỀN KHOẢNG CÁCH
     private var selectedRankIndex = 0
     private var hubDistanceMoney = 0L
     private var deliveryDistanceMoney = 0L
 
-    private val deliveryCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
-    private val pickupCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
-    private val returnCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
+    val deliveryCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
+    val pickupCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
+    val returnCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
 
     private val dailyRecords = linkedMapOf<String, DayPerformance>()
 
@@ -155,7 +158,6 @@ class MainActivity : AppCompatActivity() {
 
         contentLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            // Đệm đáy 220dp giúp cuộn thoải mái, không bị nút quét ảnh che khuất
             setPadding(30, 20, 30, 220)
         }
         contentScrollView.addView(contentLayout)
@@ -276,31 +278,36 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Đặt lại dữ liệu")
             .setItems(options) { _, which ->
                 if (which == 0) {
-                    when (currentTab) {
-                        0 -> {
-                            deliveryCounts.keys.forEach { deliveryCounts[it] = 0 }
-                            dailyRecords.values.forEach { it.delivery = 0 }
-                        }
-                        1 -> {
-                            pickupCounts.keys.forEach { pickupCounts[it] = 0 }
-                            dailyRecords.values.forEach { it.pickup = 0 }
-                        }
-                        2 -> {
-                            returnCounts.keys.forEach { returnCounts[it] = 0 }
-                            dailyRecords.values.forEach { it.returns = 0 }
+                    for (i in 0..7) {
+                        when (currentTab) {
+                            0 -> {
+                                deliveryCounts[i] = 0
+                                dailyRecords.values.forEach { it.deliveryByWeight[i] = 0 }
+                            }
+                            1 -> {
+                                pickupCounts[i] = 0
+                                dailyRecords.values.forEach { it.pickupByWeight[i] = 0 }
+                            }
+                            2 -> {
+                                returnCounts[i] = 0
+                                dailyRecords.values.forEach { it.returnsByWeight[i] = 0 }
+                            }
                         }
                     }
                     Toast.makeText(this, "Đã làm trống $currentName", Toast.LENGTH_SHORT).show()
                 } else {
-                    deliveryCounts.keys.forEach { deliveryCounts[it] = 0 }
-                    pickupCounts.keys.forEach { pickupCounts[it] = 0 }
-                    returnCounts.keys.forEach { returnCounts[it] = 0 }
+                    for (i in 0..7) {
+                        deliveryCounts[i] = 0
+                        pickupCounts[i] = 0
+                        returnCounts[i] = 0
+                    }
                     dailyRecords.clear()
                     hubDistanceMoney = 0L
                     deliveryDistanceMoney = 0L
                     selectedRankIndex = 0
                     Toast.makeText(this, "Đã xóa toàn bộ dữ liệu ứng dụng", Toast.LENGTH_SHORT).show()
                 }
+                recalculateAllTiers()
                 renderCurrentTabContent()
             }
             .setNegativeButton("Hủy", null)
@@ -413,6 +420,38 @@ class MainActivity : AppCompatActivity() {
             renderSummaryTab()
         } else {
             renderOrderTypeTab()
+        }
+    }
+
+    // TÍNH TOÁN LẠI CHÍNH XÁC TOÀN BỘ CÁC BẬC MỐC SAU KHI XÓA/SỬA NGÀY
+    private fun recalculateAllTiers() {
+        for (i in 0..7) {
+            deliveryCounts[i] = 0
+            pickupCounts[i] = 0
+            returnCounts[i] = 0
+        }
+
+        var runningDeliveryMoney = 0L
+        var runningPickupMoney = 0L
+        var runningReturnMoney = 0L
+
+        for (record in dailyRecords.values) {
+            val prevD = calculateTierTotal(deliveryCounts, SpxRateTables.DELIVERY_TIERS)
+            val prevP = calculateTierTotal(pickupCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
+            val prevR = calculateTierTotal(returnCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
+
+            for (i in 0..7) {
+                deliveryCounts[i] = (deliveryCounts[i] ?: 0) + record.deliveryByWeight[i]
+                pickupCounts[i] = (pickupCounts[i] ?: 0) + record.pickupByWeight[i]
+                returnCounts[i] = (returnCounts[i] ?: 0) + record.returnsByWeight[i]
+            }
+
+            val newD = calculateTierTotal(deliveryCounts, SpxRateTables.DELIVERY_TIERS)
+            val newP = calculateTierTotal(pickupCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
+            val newR = calculateTierTotal(returnCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
+
+            val gain = ((newD - prevD) + (newP - prevP) + (newR - prevR)).coerceAtLeast(0L)
+            record.dailyProducedMoney = gain
         }
     }
 
@@ -548,7 +587,7 @@ class MainActivity : AppCompatActivity() {
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#374151"))
             background = makeRoundedStroke(Color.WHITE, Color.parseColor("#D1D5DB"), 18f)
-            setOnClickListener { showAddOrderDialog(counts) }
+            setOnClickListener { showAddOrderDialog() }
         }
         val halfP = LinearLayout.LayoutParams(0, 120, 1.2f)
         val smallP = LinearLayout.LayoutParams(0, 120, 0.8f)
@@ -626,7 +665,6 @@ class MainActivity : AppCompatActivity() {
                     ).apply { bottomMargin = 20 }
                     layoutParams = p
                     elevation = 2f
-                    // CHẠM ĐỂ SỬA HOẶC XÓA NGÀY
                     setOnClickListener { showEditDayDialog(date, record) }
                 }
 
@@ -662,7 +700,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val detailSummary = TextView(this).apply {
-                    text = "Giao: ${record.delivery} | Lấy: ${record.pickup} (quy đổi ${String.format("%.1f", record.pickup / 6.0)}) | Hoàn: ${record.returns} → Điểm ngày: ${String.format("%.1f", record.getPoints())} đơn"
+                    text = "Giao: ${record.getDeliveryCount()} | Lấy: ${record.getPickupCount()} (quy đổi ${String.format("%.1f", record.getPickupCount() / 6.0)}) | Hoàn: ${record.getReturnsCount()} → Điểm ngày: ${String.format("%.1f", record.getPoints())} đơn"
                     textSize = 11f
                     setTextColor(Color.parseColor("#9CA3AF"))
                     setPadding(0, 8, 0, 0)
@@ -689,14 +727,9 @@ class MainActivity : AppCompatActivity() {
         val returnMoney = calculateTierTotal(returnCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
         val totalProductEarnings = deliveryMoney + pickupMoney + returnMoney
 
-        // TIỀN THƯỞNG RANK (% TRÊN TỔNG SẢN LƯỢNG)
         val rankPercent = SpxRateTables.RANK_PERCENT[selectedRankIndex]
         val rankBonusMoney = (totalProductEarnings * rankPercent).toLong()
-
-        // TỔNG TIỀN KHOẢNG CÁCH
         val totalDistanceMoney = hubDistanceMoney + deliveryDistanceMoney
-
-        // TỔNG LƯƠNG ĐẦY ĐỦ TẤT CẢ CÁC KHOẢN
         val grandTotal = totalBaseSalary + totalProductEarnings + rankBonusMoney + totalDistanceMoney
 
         val grandCard = LinearLayout(this).apply {
@@ -753,7 +786,6 @@ class MainActivity : AppCompatActivity() {
         grandCard.addView(detailDist)
         contentLayout.addView(grandCard)
 
-        // KHUNG CÀI ĐẶT RANK & TIỀN KHOẢNG CÁCH
         val extraCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = makeRounded(Color.WHITE, 24f)
@@ -774,7 +806,6 @@ class MainActivity : AppCompatActivity() {
         }
         extraCard.addView(tvExtraTitle)
 
-        // 1. CHỌN RANK
         val rowRank = RelativeLayout(this).apply {
             setPadding(0, 25, 0, 15)
             val l = TextView(this@MainActivity).apply {
@@ -806,7 +837,6 @@ class MainActivity : AppCompatActivity() {
         }
         extraCard.addView(rowRank)
 
-        // 2. NHẬP TIỀN KHOẢNG CÁCH HUB
         val rowHub = RelativeLayout(this).apply {
             setPadding(0, 10, 0, 10)
             val l = TextView(this@MainActivity).apply {
@@ -838,7 +868,6 @@ class MainActivity : AppCompatActivity() {
         }
         extraCard.addView(rowHub)
 
-        // 3. NHẬP TIỀN KHOẢNG CÁCH ĐƠN GIAO
         val rowDeliveryDist = RelativeLayout(this).apply {
             setPadding(0, 10, 0, 10)
             val l = TextView(this@MainActivity).apply {
@@ -926,26 +955,30 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    // CHỈNH SỬA HOẶC XÓA TỪNG NGÀY
+    // HỘP THOẠI SỬA/XÓA NGÀY - TỰ ĐỘNG CẬP NHẬT LẠI MỐC
     private fun showEditDayDialog(date: String, record: DayPerformance) {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 20, 40, 20)
         }
 
+        val curDel = record.getDeliveryCount()
+        val curPick = record.getPickupCount()
+        val curRet = record.getReturnsCount()
+
         val etDelivery = EditText(this).apply {
             hint = "Số đơn giao"
-            setText("${record.delivery}")
+            setText("$curDel")
             inputType = InputType.TYPE_CLASS_NUMBER
         }
         val etPickup = EditText(this).apply {
             hint = "Số đơn lấy"
-            setText("${record.pickup}")
+            setText("$curPick")
             inputType = InputType.TYPE_CLASS_NUMBER
         }
         val etReturns = EditText(this).apply {
             hint = "Số đơn hoàn"
-            setText("${record.returns}")
+            setText("$curRet")
             inputType = InputType.TYPE_CLASS_NUMBER
         }
 
@@ -960,34 +993,25 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("Tùy chọn ngày $date")
             .setView(layout)
-            .setPositiveButton("Lưu") { _, _ ->
-                val newDel = etDelivery.text.toString().toIntOrNull() ?: record.delivery
-                val newPick = etPickup.text.toString().toIntOrNull() ?: record.pickup
-                val newRet = etReturns.text.toString().toIntOrNull() ?: record.returns
+            .setPositiveButton("Lưu thay đổi") { _, _ ->
+                val newDel = etDelivery.text.toString().toIntOrNull() ?: curDel
+                val newPick = etPickup.text.toString().toIntOrNull() ?: curPick
+                val newRet = etReturns.text.toString().toIntOrNull() ?: curRet
 
-                val diffDel = newDel - record.delivery
-                val diffPick = newPick - record.pickup
-                val diffRet = newRet - record.returns
+                record.deliveryByWeight[0] = (record.deliveryByWeight[0] + (newDel - curDel)).coerceAtLeast(0)
+                record.pickupByWeight[0] = (record.pickupByWeight[0] + (newPick - curPick)).coerceAtLeast(0)
+                record.returnsByWeight[0] = (record.returnsByWeight[0] + (newRet - curRet)).coerceAtLeast(0)
 
-                deliveryCounts[0] = ((deliveryCounts[0] ?: 0) + diffDel).coerceAtLeast(0)
-                pickupCounts[0] = ((pickupCounts[0] ?: 0) + diffPick).coerceAtLeast(0)
-                returnCounts[0] = ((returnCounts[0] ?: 0) + diffRet).coerceAtLeast(0)
-
-                record.delivery = newDel
-                record.pickup = newPick
-                record.returns = newRet
-
+                recalculateAllTiers()
                 renderCurrentTabContent()
-                Toast.makeText(this, "Đã cập nhật ngày $date", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Đã cập nhật ngày $date và tính lại toàn bộ mốc!", Toast.LENGTH_SHORT).show()
             }
             .setNeutralButton("Xóa ngày này") { _, _ ->
-                deliveryCounts[0] = ((deliveryCounts[0] ?: 0) - record.delivery).coerceAtLeast(0)
-                pickupCounts[0] = ((pickupCounts[0] ?: 0) - record.pickup).coerceAtLeast(0)
-                returnCounts[0] = ((returnCounts[0] ?: 0) - record.returns).coerceAtLeast(0)
-
+                // XÓA NGÀY VÀ TÍNH LẠI TOÀN BỘ CÁC MỐC TRÊN BẢNG
                 dailyRecords.remove(date)
+                recalculateAllTiers()
                 renderCurrentTabContent()
-                Toast.makeText(this, "Đã xóa ngày $date (các ngày khác giữ nguyên)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Đã xóa ngày $date và trừ sạch số đơn khỏi các mốc!", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Hủy", null)
             .show()
@@ -1151,12 +1175,12 @@ class MainActivity : AppCompatActivity() {
         return card
     }
 
-    private fun showAddOrderDialog(targetMap: MutableMap<Int, Int>) {
+    private fun showAddOrderDialog() {
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 20, 40, 20) }
         val inputs = mutableListOf<EditText>()
         for (i in 0..7) {
             val et = EditText(this).apply {
-                hint = "${SpxRateTables.WEIGHT_LABELS[i]} (Hiện có: ${targetMap[i] ?: 0})"
+                hint = SpxRateTables.WEIGHT_LABELS[i]
                 inputType = InputType.TYPE_CLASS_NUMBER
             }
             inputs.add(et)
@@ -1166,24 +1190,19 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Nhập thêm đơn theo dải cân")
             .setView(layout)
             .setPositiveButton("Lưu") { _, _ ->
-                var addedTotal = 0
+                val today = SimpleDateFormat("dd/MM", Locale.getDefault()).format(Date())
+                val record = dailyRecords.getOrPut(today) { DayPerformance(today) }
                 for (i in 0..7) {
-                    val txt = inputs[i].text.toString().trim()
-                    if (txt.isNotEmpty()) {
-                        val count = txt.toIntOrNull() ?: 0
-                        targetMap[i] = (targetMap[i] ?: 0) + count
-                        addedTotal += count
+                    val count = inputs[i].text.toString().trim().toIntOrNull() ?: 0
+                    if (count > 0) {
+                        when (currentTab) {
+                            0 -> record.deliveryByWeight[i] += count
+                            1 -> record.pickupByWeight[i] += count
+                            2 -> record.returnsByWeight[i] += count
+                        }
                     }
                 }
-                if (addedTotal > 0) {
-                    val today = SimpleDateFormat("dd/MM", Locale.getDefault()).format(Date())
-                    val record = dailyRecords.getOrPut(today) { DayPerformance(today) }
-                    when (currentTab) {
-                        0 -> record.delivery += addedTotal
-                        1 -> record.pickup += addedTotal
-                        2 -> record.returns += addedTotal
-                    }
-                }
+                recalculateAllTiers()
                 renderCurrentTabContent()
             }
             .setNegativeButton("Hủy", null)
@@ -1214,14 +1233,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun executeDataImport(visionText: Text, tabIndex: Int) {
-        val (targetMap, tiers) = when (tabIndex) {
-            0 -> Pair(deliveryCounts, SpxRateTables.DELIVERY_TIERS)
-            1 -> Pair(pickupCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
-            else -> Pair(returnCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
-        }
-
-        val previousMoney = calculateTierTotal(targetMap, tiers)
-
         data class TextItem(val text: String, val y: Int, val x: Int)
         val allLines = mutableListOf<TextItem>()
 
@@ -1254,6 +1265,7 @@ class MainActivity : AppCompatActivity() {
             Pair(7, listOf("> 15", "15.001", ">15"))
         )
 
+        val scannedByWeight = IntArray(8)
         var dayCount = 0
 
         for ((idx, keys) in weightRanges) {
@@ -1273,32 +1285,31 @@ class MainActivity : AppCompatActivity() {
                     0
                 }
 
-                targetMap[idx] = (targetMap[idx] ?: 0) + count
+                scannedByWeight[idx] = count
                 dayCount += count
             }
         }
 
         if (officialHeaderTotal != -1 && officialHeaderTotal > dayCount) {
             val diff = officialHeaderTotal - dayCount
-            targetMap[0] = (targetMap[0] ?: 0) + diff
+            scannedByWeight[0] += diff
             dayCount = officialHeaderTotal
         }
-
-        val afterMoney = calculateTierTotal(targetMap, tiers)
-        val moneyGainedToday = (afterMoney - previousMoney).coerceAtLeast(0L)
 
         val fullText = visionText.text
         val dateMatch = Regex("""(\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2})""").find(fullText)
         val date = dateMatch?.value ?: SimpleDateFormat("dd/MM", Locale.getDefault()).format(Date())
 
         val record = dailyRecords.getOrPut(date) { DayPerformance(date) }
-        when (tabIndex) {
-            0 -> record.delivery += dayCount
-            1 -> record.pickup += dayCount
-            2 -> record.returns += dayCount
+        for (i in 0..7) {
+            when (tabIndex) {
+                0 -> record.deliveryByWeight[i] += scannedByWeight[i]
+                1 -> record.pickupByWeight[i] += scannedByWeight[i]
+                2 -> record.returnsByWeight[i] += scannedByWeight[i]
+            }
         }
-        record.dailyProducedMoney += moneyGainedToday
 
+        recalculateAllTiers()
         renderCurrentTabContent()
 
         val tabNames = listOf("Đơn Giao", "Đơn Lấy", "Đơn Hoàn")
@@ -1309,7 +1320,7 @@ class MainActivity : AppCompatActivity() {
         val dayShiftMoney = (wagePerDay * record.getWorkShift()).toLong()
         val totalToday = dayShiftMoney + record.dailyProducedMoney
 
-        Toast.makeText(this, "Đã khớp đúng $dayCount đơn vào $currentName! Hôm nay: +${fmt.format(totalToday)} đ", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Đã lưu $dayCount đơn vào $currentName! Hôm nay: +${fmt.format(totalToday)} đ", Toast.LENGTH_LONG).show()
     }
 
     private fun createCell(text: String, isHeader: Boolean, color: Int, isBold: Boolean = false): TextView {
