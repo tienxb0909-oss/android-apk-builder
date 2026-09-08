@@ -400,6 +400,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // TÍNH MỐC CHUẨN: MỖI MỨC CÂN CÓ MỘT MỐC ĐỘC LẬP THEO CHÍNH SỐ ĐƠN CỦA NÓ
     private fun renderOrderTypeTab() {
         val (counts, tiers) = when (currentTab) {
             0 -> Pair(deliveryCounts, SpxRateTables.DELIVERY_TIERS)
@@ -408,12 +409,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         val totalCumulativeOrders = counts.values.sum()
-        val globalTier = if (totalCumulativeOrders > 0) {
-            tiers.lastOrNull { totalCumulativeOrders >= it.minOrder } ?: tiers.first()
-        } else null
-
         var totalMoney = 0L
-        val tierRates = globalTier?.rates
+
+        // Tính tổng tiền: mỗi mức cân lấy theo mốc của riêng số đơn dòng đó
+        counts.forEach { (col, count) ->
+            if (count > 0) {
+                val tier = tiers.lastOrNull { count >= it.minOrder } ?: tiers.first()
+                totalMoney += tier.rates[col].toLong() * 1000L
+            }
+        }
 
         val mainCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -442,21 +446,23 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = p
 
                 val sub = TextView(this@MainActivity).apply {
-                    text = "Lương sản lượng lũy kế ($totalCumulativeOrders đơn)"
+                    text = "Số tiền nhận được (Theo mốc)"
                     textSize = 12f
                     setTextColor(Color.parseColor("#6B7280"))
                 }
                 val tvMoney = TextView(this@MainActivity).apply {
-                    id = View.generateViewId()
+                    text = "${fmt.format(totalMoney)} đ"
                     textSize = 23f
                     typeface = Typeface.DEFAULT_BOLD
                     setTextColor(Color.parseColor("#EE4D2D"))
                 }
                 val tierText = TextView(this@MainActivity).apply {
-                    text = if (globalTier != null) {
-                        "Mốc lũy kế: ${globalTier.minOrder} - ${if (globalTier.maxOrder == Int.MAX_VALUE) "+" else globalTier.maxOrder} đơn"
+                    val mainWeightCount = counts[0] ?: 0
+                    val mainTier = if (mainWeightCount > 0) tiers.lastOrNull { mainWeightCount >= it.minOrder } ?: tiers.first() else null
+                    text = if (mainTier != null) {
+                        "Đạt mốc: ${mainTier.minOrder} - ${if (mainTier.maxOrder == Int.MAX_VALUE) "+" else mainTier.maxOrder} đơn"
                     } else {
-                        "Chưa đạt mốc tính"
+                        "Tổng đơn thực tế: $totalCumulativeOrders đơn"
                     }
                     textSize = 12f
                     setTextColor(Color.parseColor("#EE4D2D"))
@@ -471,7 +477,7 @@ class MainActivity : AppCompatActivity() {
         mainCard.addView(topRow)
 
         val tvSubTable = TextView(this).apply {
-            text = "Chi tiết theo từng mức cân ($selectedRegion)"
+            text = "Chi tiết theo từng mức cân nặng ($selectedRegion)"
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#1F2937"))
@@ -492,16 +498,17 @@ class MainActivity : AppCompatActivity() {
 
         for (i in 0..7) {
             val count = counts[i] ?: 0
-            val itemMoney = if (tierRates != null && count > 0) {
-                tierRates[i].toLong() * 1000L
+            // ĐỐI CHIẾU MỐC RIÊNG THEO SỐ ĐƠN CỦA DÒNG ĐÓ
+            val tier = if (count > 0) tiers.lastOrNull { count >= it.minOrder } ?: tiers.first() else null
+            val itemMoney = if (tier != null && count > 0) {
+                tier.rates[i].toLong() * 1000L
             } else 0L
-            totalMoney += itemMoney
 
             val row = TableRow(this).apply {
                 setPadding(20, 14, 20, 14)
                 addView(createCell(SpxRateTables.WEIGHT_LABELS[i], false, if (count > 0) Color.parseColor("#111827") else Color.parseColor("#9CA3AF")))
                 addView(createCell(if (count > 0) "$count" else "0", false, if (count > 0) Color.parseColor("#EE4D2D") else Color.parseColor("#9CA3AF"), true))
-                addView(createCell(if (globalTier != null && count > 0) "${globalTier.minOrder} - ${if (globalTier.maxOrder == Int.MAX_VALUE) "+" else globalTier.maxOrder}" else "-", false, if (count > 0) Color.parseColor("#EE4D2D") else Color.parseColor("#9CA3AF")))
+                addView(createCell(if (tier != null) "${tier.minOrder} - ${if (tier.maxOrder == Int.MAX_VALUE) "+" else tier.maxOrder}" else "-", false, if (count > 0) Color.parseColor("#EE4D2D") else Color.parseColor("#9CA3AF")))
                 addView(createCell(if (count > 0) "${fmt.format(itemMoney)} đ" else "0 đ", false, if (count > 0) Color.parseColor("#10B981") else Color.parseColor("#9CA3AF"), true))
             }
             table.addView(row)
@@ -509,8 +516,7 @@ class MainActivity : AppCompatActivity() {
         mainCard.addView(table)
         contentLayout.addView(mainCard)
 
-        (topRow.findViewById<LinearLayout>(topRow.getChildAt(1).id)?.getChildAt(1) as? TextView)?.text = "${fmt.format(totalMoney)} đ"
-
+        // Cụm nút thao tác
         val btnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 30, 0, 30)
@@ -538,6 +544,7 @@ class MainActivity : AppCompatActivity() {
         btnRow.addView(btnAddAction, halfP)
         contentLayout.addView(btnRow)
 
+        // Danh sách nhật ký ngày & Tổng tiền kiếm được trong ngày
         val logHeader = RelativeLayout(this).apply {
             val tvTitle = TextView(this@MainActivity).apply {
                 text = "Tổng tiền kiếm được & Công theo ngày"
@@ -735,41 +742,42 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun calculateTierTotal(counts: Map<Int, Int>, tiers: List<RateTier>): Long {
-        val totalCount = counts.values.sum()
-        if (totalCount == 0) return 0L
-        val tier = tiers.lastOrNull { totalCount >= it.minOrder } ?: tiers.first()
         var sum = 0L
         counts.forEach { (col, count) ->
-            if (count > 0) sum += tier.rates[col].toLong() * 1000L
+            if (count > 0) {
+                val tier = tiers.lastOrNull { count >= it.minOrder } ?: tiers.first()
+                sum += tier.rates[col].toLong() * 1000L
+            }
         }
         return sum
     }
 
     private fun buildDynamicSuggestionCard(title: String, counts: Map<Int, Int>, tiers: List<RateTier>): View {
         val totalCount = counts.values.sum()
-        val curTierIndex = tiers.indexOfLast { totalCount >= it.minOrder }
-        val currentTier = if (curTierIndex != -1) tiers[curTierIndex] else tiers.first()
-        val tierName = if (totalCount == 0) "Chưa có đơn" else "${currentTier.minOrder} - ${if (currentTier.maxOrder == Int.MAX_VALUE) "+" else currentTier.maxOrder}"
-
         var currentMoney = 0L
-        if (totalCount > 0) {
-            counts.forEach { (col, count) ->
-                if (count > 0) currentMoney += currentTier.rates[col].toLong() * 1000L
+        counts.forEach { (col, count) ->
+            if (count > 0) {
+                val tier = tiers.lastOrNull { count >= it.minOrder } ?: tiers.first()
+                currentMoney += tier.rates[col].toLong() * 1000L
             }
         }
 
-        val items = mutableListOf<Tuple3<String, String, String>>()
-        if (curTierIndex + 1 < tiers.size) {
-            val nextTier = tiers[curTierIndex + 1]
-            val neededOrders = nextTier.minOrder - totalCount
+        val mainWeightCount = counts[0] ?: 0
+        val curTier = if (mainWeightCount > 0) tiers.lastOrNull { mainWeightCount >= it.minOrder } ?: tiers.first() else null
+        val tierName = if (curTier != null) "${curTier.minOrder} - ${if (curTier.maxOrder == Int.MAX_VALUE) "+" else curTier.maxOrder}" else "Chưa có đơn"
 
-            for (i in 0..7) {
-                val count = counts[i] ?: 0
-                if (count > 0) {
-                    val diff = (nextTier.rates[i] - currentTier.rates[i]).toLong() * 1000L
+        val items = mutableListOf<Tuple3<String, String, String>>()
+        for (i in 0..7) {
+            val count = counts[i] ?: 0
+            if (count > 0) {
+                val curTierIndex = tiers.indexOfLast { count >= it.minOrder }
+                if (curTierIndex != -1 && curTierIndex + 1 < tiers.size) {
+                    val nextTier = tiers[curTierIndex + 1]
+                    val needed = nextTier.minOrder - count
+                    val diff = (nextTier.rates[i] - tiers[curTierIndex].rates[i]).toLong() * 1000L
                     items.add(Tuple3(
-                        "Mức ${SpxRateTables.WEIGHT_LABELS[i]} ($count đơn)",
-                        "Tổng đơn đạt ${nextTier.minOrder} (Cần thêm +$neededOrders đơn)",
+                        "Mức ${SpxRateTables.WEIGHT_LABELS[i]} ($count đơn • Mốc ${tiers[curTierIndex].minOrder} - ${tiers[curTierIndex].maxOrder})",
+                        "Cần thêm +$needed đơn để đạt mốc ${nextTier.minOrder} - ${nextTier.maxOrder} đơn",
                         "+${fmt.format(diff)} đ"
                     ))
                 }
@@ -840,7 +848,7 @@ class MainActivity : AppCompatActivity() {
 
         if (items.isEmpty()) {
             val tvEmpty = TextView(this).apply {
-                text = "Chưa có đủ dữ liệu hoặc đã chạm mức tối đa."
+                text = "Chưa có đủ dữ liệu đơn để phân tích mốc kế tiếp."
                 textSize = 12f
                 setTextColor(Color.parseColor("#9CA3AF"))
                 setPadding(0, 10, 0, 10)
