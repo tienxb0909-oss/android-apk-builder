@@ -29,7 +29,7 @@ object SpxRateTables {
         ">8 - 10 kg", ">10 - 12 kg", ">12 - 15 kg", ">15 kg"
     )
 
-    // Bảng tính Đơn Giao theo mốc bậc thang
+    // Bảng tính Đơn Giao (áp dụng chung chuẩn các hub)
     val DELIVERY_TIERS = listOf(
         RateTier(1, 15, intArrayOf(25, 60, 60, 70, 70, 90, 110, 120)),
         RateTier(15, 30, intArrayOf(50, 110, 120, 120, 150, 180, 220, 240)),
@@ -58,7 +58,7 @@ object SpxRateTables {
         RateTier(2000, Int.MAX_VALUE, intArrayOf(4050, 7300, 8500, 8900, 11350, 14575, 17825, 19025))
     )
 
-    // Bảng tính Đơn Lấy & Hoàn theo mốc bậc thang
+    // Bảng tính Đơn Lấy & Trả hàng hoàn
     val PICKUP_AND_RETURN_TIERS = listOf(
         RateTier(1, 15, intArrayOf(15, 30, 30, 40, 40, 50, 70, 70)),
         RateTier(15, 30, intArrayOf(25, 60, 60, 60, 70, 90, 110, 120)),
@@ -73,14 +73,23 @@ object SpxRateTables {
         RateTier(1200, 1500, intArrayOf(425, 775, 900, 925, 1200, 1525, 1875, 2000)),
         RateTier(1500, Int.MAX_VALUE, intArrayOf(500, 900, 1050, 1100, 1400, 1800, 2200, 2350))
     )
+
+    // Mức lương cơ sở tối thiểu 4 vùng (chuẩn 26 ngày công)
+    val REGION_SALARIES = mapOf(
+        "KV1" to 5310000L, // Vùng 1
+        "KV2" to 4730000L, // Vùng 2
+        "KV3" to 4140000L, // Vùng 3
+        "KV4" to 3700000L  // Vùng 4
+    )
 }
 
 class MainActivity : AppCompatActivity() {
 
     private val fmt = DecimalFormat("#,###")
     private var currentTab = 0 // 0: Giao, 1: Lấy, 2: Hoàn, 3: Tổng Kết
+    private var selectedRegion = "KV1" // Mặc định KV1, có thể đổi sang KV2, KV3, KV4
+    private var manualWorkDays = 26.0 // Số ngày công tiêu chuẩn trong tháng
 
-    // Khởi tạo hoàn toàn sạch dữ liệu (0 đơn)
     private val deliveryCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
     private val pickupCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
     private val returnCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
@@ -92,6 +101,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var contentScrollView: ScrollView
     private lateinit var contentLayout: LinearLayout
     private val navTabViews = mutableListOf<LinearLayout>()
+    private lateinit var btnRegionSelector: TextView
 
     private val photoPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) parseOcrImage(uri)
@@ -139,7 +149,7 @@ class MainActivity : AppCompatActivity() {
         return RelativeLayout(this).apply {
             id = View.generateViewId()
             setBackgroundColor(Color.WHITE)
-            setPadding(35, 30, 35, 25)
+            setPadding(30, 25, 30, 20)
             elevation = 6f
 
             val logoBox = LinearLayout(this@MainActivity).apply {
@@ -156,11 +166,11 @@ class MainActivity : AppCompatActivity() {
             }
 
             val title = TextView(this@MainActivity).apply {
-                text = "Sản Lượng Đơn SPX"
-                textSize = 18f
+                text = "Sản Lượng SPX"
+                textSize = 17f
                 setTextColor(Color.parseColor("#1F2937"))
                 typeface = Typeface.DEFAULT_BOLD
-                setPadding(20, 0, 0, 0)
+                setPadding(16, 0, 0, 0)
                 val p = RelativeLayout.LayoutParams(
                     RelativeLayout.LayoutParams.WRAP_CONTENT,
                     RelativeLayout.LayoutParams.WRAP_CONTENT
@@ -171,13 +181,10 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = p
             }
 
-            val btnReset = TextView(this@MainActivity).apply {
-                text = "🔄 Reset"
-                textSize = 12f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(Color.parseColor("#DC2626"))
-                background = makeRounded(Color.parseColor("#FEE2E2"), 14f)
-                setPadding(18, 10, 18, 10)
+            // Cụm chức năng bên phải: Nút chọn Khu Vực + Nút Reset
+            val rightGroup = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
                 val p = RelativeLayout.LayoutParams(
                     RelativeLayout.LayoutParams.WRAP_CONTENT,
                     RelativeLayout.LayoutParams.WRAP_CONTENT
@@ -186,13 +193,58 @@ class MainActivity : AppCompatActivity() {
                     addRule(RelativeLayout.CENTER_VERTICAL)
                 }
                 layoutParams = p
-                setOnClickListener { showResetConfirmationDialog() }
+
+                // Nút chọn nhanh Khu Vực (KV1 - KV4)
+                btnRegionSelector = TextView(this@MainActivity).apply {
+                    text = "📍 $selectedRegion"
+                    textSize = 12f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(Color.parseColor("#1E40AF"))
+                    background = makeRounded(Color.parseColor("#DBEAFE"), 14f)
+                    setPadding(16, 10, 16, 10)
+                    setOnClickListener { showRegionPickerDialog() }
+                }
+
+                val space = View(this@MainActivity).apply { layoutParams = LinearLayout.LayoutParams(14, 1) }
+
+                // Nút Reset
+                val btnReset = TextView(this@MainActivity).apply {
+                    text = "🔄"
+                    textSize = 14f
+                    background = makeRounded(Color.parseColor("#FEE2E2"), 14f)
+                    setPadding(16, 8, 16, 8)
+                    setOnClickListener { showResetConfirmationDialog() }
+                }
+
+                addView(btnRegionSelector)
+                addView(space)
+                addView(btnReset)
             }
 
             addView(logoBox)
             addView(title)
-            addView(btnReset)
+            addView(rightGroup)
         }
+    }
+
+    private fun showRegionPickerDialog() {
+        val regions = arrayOf(
+            "Vùng 1 (KV1) - Lương CB: 5.310.000 đ",
+            "Vùng 2 (KV2) - Lương CB: 4.730.000 đ",
+            "Vùng 3 (KV3) - Lương CB: 4.140.000 đ",
+            "Vùng 4 (KV4) - Lương CB: 3.700.000 đ"
+        )
+        val keys = listOf("KV1", "KV2", "KV3", "KV4")
+
+        AlertDialog.Builder(this)
+            .setTitle("Chọn Khu Vực Hoạt Động")
+            .setItems(regions) { _, which ->
+                selectedRegion = keys[which]
+                btnRegionSelector.text = "📍 $selectedRegion"
+                renderCurrentTabContent()
+                Toast.makeText(this, "Đã chuyển sang $selectedRegion", Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
     private fun showResetConfirmationDialog() {
@@ -325,7 +377,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // TÍNH LƯƠNG THEO MỐC LŨY KẾ TỔNG SỐ ĐƠN CỦA TẤT CẢ CÁC NGÀY
+    // TÍNH TOÁN THEO MỐC LŨY KẾ VÀ ĐƠN GIÁ BẬC THANG
     private fun renderOrderTypeTab() {
         val (counts, tiers, logs, titleStr) = when (currentTab) {
             0 -> Tuple4(deliveryCounts, SpxRateTables.DELIVERY_TIERS, deliveryLogs, "giao")
@@ -333,15 +385,11 @@ class MainActivity : AppCompatActivity() {
             else -> Tuple4(returnCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS, returnLogs, "hoàn")
         }
 
-        // 1. Tính tổng tất cả các đơn từ trước tới nay (Tổng Lũy Kế)
         val totalCumulativeOrders = counts.values.sum()
-
-        // 2. Tra bảng xem tổng số đơn này rơi vào MỐC NÀO
         val globalTier = if (totalCumulativeOrders > 0) {
             tiers.lastOrNull { totalCumulativeOrders >= it.minOrder } ?: tiers.first()
         } else null
 
-        // 3. Quy ra tiền: Áp đơn giá của chính Mốc Lũy Kế này cho từng dải cân
         var totalMoney = 0L
         val tierRates = globalTier?.rates
 
@@ -372,7 +420,7 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = p
 
                 val sub = TextView(this@MainActivity).apply {
-                    text = "Lương lũy kế ($totalCumulativeOrders đơn đã cộng dồn)"
+                    text = "Lương lũy kế ($totalCumulativeOrders đơn đã dồn)"
                     textSize = 12f
                     setTextColor(Color.parseColor("#6B7280"))
                 }
@@ -384,7 +432,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 val tierText = TextView(this@MainActivity).apply {
                     text = if (globalTier != null) {
-                        "Đang hưởng mốc: ${globalTier.minOrder} - ${if (globalTier.maxOrder == Int.MAX_VALUE) "+" else globalTier.maxOrder} đơn"
+                        "Mốc lũy kế: ${globalTier.minOrder} - ${if (globalTier.maxOrder == Int.MAX_VALUE) "+" else globalTier.maxOrder} đơn"
                     } else {
                         "Chưa đạt mốc tính"
                     }
@@ -401,7 +449,7 @@ class MainActivity : AppCompatActivity() {
         mainCard.addView(topRow)
 
         val tvSubTable = TextView(this).apply {
-            text = "Chi tiết theo từng mức cân nặng (Theo mốc lũy kế)"
+            text = "Chi tiết theo từng mức cân ($selectedRegion)"
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#1F2937"))
@@ -439,12 +487,10 @@ class MainActivity : AppCompatActivity() {
         mainCard.addView(table)
         contentLayout.addView(mainCard)
 
-        // Cập nhật lại số tiền tổng
-        val tvMoneyView = topRow.findViewById<TextView>(topRow.getChildAt(1).id) // hoặc lấy trực tiếp
-        // Đặt text cho hiển thị tiền tổng
+        // Cập nhật text hiển thị số tiền
         (topRow.findViewById<LinearLayout>(topRow.getChildAt(1).id)?.getChildAt(1) as? TextView)?.text = "${fmt.format(totalMoney)} đ"
 
-        // Nút thao tác
+        // Nút bấm thao tác
         val btnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 30, 0, 30)
@@ -472,7 +518,7 @@ class MainActivity : AppCompatActivity() {
         btnRow.addView(btnAddAction, halfP)
         contentLayout.addView(btnRow)
 
-        // Nhật ký sản lượng
+        // Nhật ký theo ngày
         val logHeader = RelativeLayout(this).apply {
             val tvTitle = TextView(this@MainActivity).apply {
                 text = "Nhật ký sản lượng từng ngày"
@@ -507,7 +553,7 @@ class MainActivity : AppCompatActivity() {
                     RelativeLayout.LayoutParams.WRAP_CONTENT
                 ).apply { addRule(RelativeLayout.ALIGN_PARENT_RIGHT) }
                 layoutParams = p
-                setOnClickListener { Toast.makeText(this@MainActivity, "Đang xuất file Excel...", Toast.LENGTH_SHORT).show() }
+                setOnClickListener { Toast.makeText(this@MainActivity, "Đang xuất dữ liệu...", Toast.LENGTH_SHORT).show() }
             }
             addView(box)
             addView(tvExport)
@@ -517,7 +563,7 @@ class MainActivity : AppCompatActivity() {
         val logsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 20, 0, 0) }
         if (logs.isEmpty()) {
             val tvEmpty = TextView(this).apply {
-                text = "Chưa có dữ liệu nào. Hãy quét ảnh để bắt đầu cộng dồn."
+                text = "Chưa có dữ liệu. Hãy quét ảnh để bắt đầu cộng dồn."
                 textSize = 13f
                 setTextColor(Color.parseColor("#9CA3AF"))
                 gravity = Gravity.CENTER
@@ -575,11 +621,79 @@ class MainActivity : AppCompatActivity() {
         contentLayout.addView(logsContainer)
     }
 
+    // TAB TỔNG KẾT: TÍNH LƯƠNG CƠ BẢN THEO KHU VỰC + LƯƠNG SẢN LƯỢNG
     private fun renderSummaryTab() {
+        val baseSalaryMonthly = SpxRateTables.REGION_SALARIES[selectedRegion] ?: 5310000L
+        val salaryPerDay = baseSalaryMonthly / 26.0
+        val actualBaseSalary = (salaryPerDay * manualWorkDays).toLong()
+
+        // Tiền sản lượng từng mục
+        val deliveryMoney = calculateTierTotal(deliveryCounts, SpxRateTables.DELIVERY_TIERS)
+        val pickupMoney = calculateTierTotal(pickupCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
+        val returnMoney = calculateTierTotal(returnCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
+        val totalProductEarnings = deliveryMoney + pickupMoney + returnMoney
+        val grandTotal = actualBaseSalary + totalProductEarnings
+
+        // Card Tổng Thu Nhập Hoàn Chỉnh
+        val grandCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = makeRounded(Color.parseColor("#1E293B"), 28f)
+            setPadding(40, 35, 40, 40)
+            elevation = 6f
+        }
+
+        val tvTitleGrand = TextView(this).apply {
+            text = "TỔNG THU NHẬP THÁNG ($selectedRegion)"
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#94A3B8"))
+        }
+        val tvTotalMoney = TextView(this).apply {
+            text = "${fmt.format(grandTotal)} VNĐ"
+            textSize = 28f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#38BDF8"))
+            setPadding(0, 10, 0, 15)
+        }
+
+        val detailBase = TextView(this).apply {
+            text = "• Lương cứng ($manualWorkDays công): ${fmt.format(actualBaseSalary)} đ"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+        }
+        val detailProd = TextView(this).apply {
+            text = "• Lương sản lượng (Giao + Lấy + Hoàn): ${fmt.format(totalProductEarnings)} đ"
+            textSize = 13f
+            setTextColor(Color.parseColor("#4ADE80"))
+            setPadding(0, 6, 0, 0)
+        }
+
+        // Cho phép chạm vào để đổi số ngày công
+        val btnEditWorkDays = TextView(this).apply {
+            text = "✏️ Chạm để chỉnh số ngày công (Hiện tại: $manualWorkDays)"
+            textSize = 11f
+            setTextColor(Color.parseColor("#CBD5E1"))
+            setPadding(0, 16, 0, 0)
+            setOnClickListener { showEditWorkDaysDialog() }
+        }
+
+        grandCard.addView(tvTitleGrand)
+        grandCard.addView(tvTotalMoney)
+        grandCard.addView(detailBase)
+        grandCard.addView(detailProd)
+        grandCard.addView(btnEditWorkDays)
+        contentLayout.addView(grandCard)
+
+        // Khối Báo cáo Excel
         val excelCard = RelativeLayout(this).apply {
             background = makeRounded(Color.WHITE, 24f)
             setPadding(35, 30, 35, 30)
             elevation = 3f
+            val p = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = 30 }
+            layoutParams = p
 
             val iconSheet = TextView(this@MainActivity).apply {
                 id = View.generateViewId()
@@ -591,17 +705,17 @@ class MainActivity : AppCompatActivity() {
 
             val textBox = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
-                val p = RelativeLayout.LayoutParams(
+                val p1 = RelativeLayout.LayoutParams(
                     RelativeLayout.LayoutParams.WRAP_CONTENT,
                     RelativeLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
                     addRule(RelativeLayout.RIGHT_OF, iconSheet.id)
                     leftMargin = 20
                 }
-                layoutParams = p
+                layoutParams = p1
 
                 val t1 = TextView(this@MainActivity).apply { text = "Báo cáo Excel (Tháng này)"; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#111827")) }
-                val t2 = TextView(this@MainActivity).apply { text = "Bảng tổng hợp & chi tiết 8 mức cân"; textSize = 12f; setTextColor(Color.parseColor("#6B7280")) }
+                val t2 = TextView(this@MainActivity).apply { text = "Bảng đối soát đầy đủ 8 mức cân $selectedRegion"; textSize = 12f; setTextColor(Color.parseColor("#6B7280")) }
                 addView(t1)
                 addView(t2)
             }
@@ -611,20 +725,20 @@ class MainActivity : AppCompatActivity() {
                 background = makeRounded(Color.parseColor("#2E7D32"), 20f)
                 setPadding(25, 14, 25, 14)
                 gravity = Gravity.CENTER
-                val p = RelativeLayout.LayoutParams(
+                val p2 = RelativeLayout.LayoutParams(
                     RelativeLayout.LayoutParams.WRAP_CONTENT,
                     RelativeLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
                     addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
                     addRule(RelativeLayout.CENTER_VERTICAL)
                 }
-                layoutParams = p
+                layoutParams = p2
 
                 val icon = TextView(this@MainActivity).apply { text = "🔗 "; setTextColor(Color.WHITE); textSize = 11f }
                 val label = TextView(this@MainActivity).apply { text = "Xuất file"; setTextColor(Color.WHITE); textSize = 12f; typeface = Typeface.DEFAULT_BOLD }
                 addView(icon)
                 addView(label)
-                setOnClickListener { Toast.makeText(this@MainActivity, "Đang xuất báo cáo Excel...", Toast.LENGTH_SHORT).show() }
+                setOnClickListener { Toast.makeText(this@MainActivity, "Đang xuất file đối soát...", Toast.LENGTH_SHORT).show() }
             }
 
             addView(iconSheet)
@@ -633,8 +747,9 @@ class MainActivity : AppCompatActivity() {
         }
         contentLayout.addView(excelCard)
 
+        // Tiêu đề Gợi ý
         val tvTip = TextView(this).apply {
-            text = "💡  Gợi ý số đơn cần đạt mốc tiếp theo"
+            text = "💡 Gợi ý số đơn cần đạt mốc tiếp theo"
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#111827"))
@@ -651,13 +766,41 @@ class MainActivity : AppCompatActivity() {
         contentLayout.addView(pickupCard)
     }
 
+    private fun showEditWorkDaysDialog() {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(manualWorkDays.toString())
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Nhập số ngày công làm việc")
+            .setView(input)
+            .setPositiveButton("Cập nhật") { _, _ ->
+                val days = input.text.toString().toDoubleOrNull() ?: 26.0
+                manualWorkDays = days
+                renderCurrentTabContent()
+                Toast.makeText(this, "Đã cập nhật $manualWorkDays ngày công", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    private fun calculateTierTotal(counts: Map<Int, Int>, tiers: List<RateTier>): Long {
+        val totalCount = counts.values.sum()
+        if (totalCount == 0) return 0L
+        val tier = tiers.lastOrNull { totalCount >= it.minOrder } ?: tiers.first()
+        var sum = 0L
+        counts.forEach { (col, count) ->
+            if (count > 0) sum += tier.rates[col].toLong() * 1000L
+        }
+        return sum
+    }
+
     private fun buildDynamicSuggestionCard(title: String, counts: Map<Int, Int>, tiers: List<RateTier>): View {
         val totalCount = counts.values.sum()
         val curTierIndex = tiers.indexOfLast { totalCount >= it.minOrder }
         val currentTier = if (curTierIndex != -1) tiers[curTierIndex] else tiers.first()
         val tierName = if (totalCount == 0) "Chưa có đơn" else "${currentTier.minOrder} - ${if (currentTier.maxOrder == Int.MAX_VALUE) "+" else currentTier.maxOrder}"
 
-        // Tính lương hiện tại theo mốc tổng
         var currentMoney = 0L
         if (totalCount > 0) {
             counts.forEach { (col, count) ->
@@ -670,7 +813,6 @@ class MainActivity : AppCompatActivity() {
             val nextTier = tiers[curTierIndex + 1]
             val neededOrders = nextTier.minOrder - totalCount
 
-            // Dự toán nếu đạt mốc tiếp theo thì từng dải cân sẽ tăng thêm bao nhiêu tiền
             for (i in 0..7) {
                 val count = counts[i] ?: 0
                 if (count > 0) {
@@ -748,7 +890,7 @@ class MainActivity : AppCompatActivity() {
 
         if (items.isEmpty()) {
             val tvEmpty = TextView(this).apply {
-                text = "Chưa có đủ đơn hoặc đã chạm mốc tối đa."
+                text = "Chưa có đủ dữ liệu hoặc đã chạm mức tối đa."
                 textSize = 12f
                 setTextColor(Color.parseColor("#9CA3AF"))
                 setPadding(0, 10, 0, 10)
@@ -834,7 +976,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun parseOcrImage(uri: Uri) {
-        Toast.makeText(this, "Đang đọc dữ liệu ảnh...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Đang kiểm tra và đọc ảnh...", Toast.LENGTH_SHORT).show()
         val image = InputImage.fromFilePath(this, uri)
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
@@ -856,8 +998,8 @@ class MainActivity : AppCompatActivity() {
 
                     AlertDialog.Builder(this)
                         .setTitle("⚠️ Cảnh báo sai mục báo cáo!")
-                        .setMessage("Ảnh bạn vừa tải lên là 【$detectedName】, nhưng bạn đang mở mục 【$currentName】.\n\nBạn có muốn tự động chuyển sang tab 【$detectedName】 để lưu chính xác không?")
-                        .setPositiveButton("Chuyển tab & Lưu") { _, _ ->
+                        .setMessage("Ảnh tải lên là 【$detectedName】, nhưng bạn đang ở mục 【$currentName】.\n\nChuyển sang tab 【$detectedName】 để lưu chính xác?")
+                        .setPositiveButton("Chuyển & Lưu") { _, _ ->
                             switchTab(detectedType)
                             executeDataImport(text, detectedType)
                         }
@@ -903,7 +1045,6 @@ class MainActivity : AppCompatActivity() {
                         val match = Regex("""(\d+)\s*(Đơn hàng|Đơn|don)?""", RegexOption.IGNORE_CASE).find(lines[i + j])
                         if (match != null) {
                             val count = match.groupValues[1].toIntOrNull() ?: 0
-                            // CỘNG DỒN VÀO TỔNG ĐƠN TỪNG DẢI CÂN
                             targetMap[idx] = (targetMap[idx] ?: 0) + count
                             dayCount += count
                             break
