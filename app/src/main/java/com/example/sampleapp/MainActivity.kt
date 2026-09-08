@@ -6,6 +6,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -15,6 +16,9 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.text.DecimalFormat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class RateTier(val minOrder: Int, val maxOrder: Int, val rates: IntArray)
 
@@ -75,14 +79,14 @@ class MainActivity : AppCompatActivity() {
     private val fmt = DecimalFormat("#,###")
     private var currentTab = 0 // 0: Giao, 1: Lấy, 2: Hoàn, 3: Tổng Kết
 
-    // Dữ liệu mẫu khớp 100% các ảnh
-    private val deliveryCounts = mutableMapOf(0 to 717, 1 to 27, 2 to 20, 3 to 9, 4 to 13, 5 to 0, 6 to 1, 7 to 0)
-    private val pickupCounts = mutableMapOf(0 to 926, 1 to 10, 2 to 3, 3 to 0, 4 to 1, 5 to 0, 6 to 0, 7 to 0)
-    private val returnCounts = mutableMapOf(0 to 153, 1 to 2, 2 to 2, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
+    // KHỞI TẠO DỮ LIỆU HOÀN TOÀN TRỐNG
+    private val deliveryCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
+    private val pickupCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
+    private val returnCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
 
-    private val deliveryLogs = mutableListOf(DayLog("2026-09-06", 79, "Phân tích tự động từ ảnh"), DayLog("2026-09-05", 150, "Nhập tay"))
-    private val pickupLogs = mutableListOf(DayLog("2026-09-06", 71, "Phân tích tự động từ ảnh"))
-    private val returnLogs = mutableListOf(DayLog("2026-09-06", 31, "Phân tích tự động từ ảnh"))
+    private val deliveryLogs = mutableListOf<DayLog>()
+    private val pickupLogs = mutableListOf<DayLog>()
+    private val returnLogs = mutableListOf<DayLog>()
 
     private lateinit var contentScrollView: ScrollView
     private lateinit var contentLayout: LinearLayout
@@ -99,15 +103,15 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor("#F7F8FA"))
         }
 
-        // 1. Header Bar
+        // 1. Thanh tiêu đề Header
         val header = createHeader()
         rootLayout.addView(header)
 
-        // 2. Bottom Navigation
+        // 2. Thanh điều hướng dưới đáy (Bottom Navigation)
         val bottomNav = createBottomNav()
         rootLayout.addView(bottomNav)
 
-        // 3. Scrollable Content
+        // 3. Vùng cuộn nội dung
         contentScrollView = ScrollView(this).apply {
             val p = RelativeLayout.LayoutParams(
                 RelativeLayout.LayoutParams.MATCH_PARENT,
@@ -121,12 +125,12 @@ class MainActivity : AppCompatActivity() {
 
         contentLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(30, 20, 30, 100)
+            setPadding(30, 20, 30, 120)
         }
         contentScrollView.addView(contentLayout)
         rootLayout.addView(contentScrollView)
 
-        // 4. Floating Action Button: Quét ảnh SPX
+        // 4. Nút bấm nổi quét ảnh (Floating Action Button)
         val fab = createFloatingActionButton()
         rootLayout.addView(fab)
 
@@ -296,10 +300,11 @@ class MainActivity : AppCompatActivity() {
             else -> Tuple4(returnCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS, returnLogs, "hoàn")
         }
 
-        // Tính tổng tiền & xác định mốc
         var totalMoney = 0L
         val totalCount = counts.values.sum()
-        val currentTier = tiers.lastOrNull { totalCount >= it.minOrder } ?: tiers.first()
+        val currentTier = if (totalCount > 0) {
+            tiers.lastOrNull { totalCount >= it.minOrder } ?: tiers.first()
+        } else null
 
         counts.forEach { (col, count) ->
             if (count > 0) {
@@ -343,7 +348,11 @@ class MainActivity : AppCompatActivity() {
                     setTextColor(Color.parseColor("#EE4D2D"))
                 }
                 val tierText = TextView(this@MainActivity).apply {
-                    text = "Đạt mốc: ${currentTier.minOrder} - ${if (currentTier.maxOrder == Int.MAX_VALUE) "+" else currentTier.maxOrder} đơn"
+                    text = if (currentTier != null) {
+                        "Đạt mốc: ${currentTier.minOrder} - ${if (currentTier.maxOrder == Int.MAX_VALUE) "+" else currentTier.maxOrder} đơn"
+                    } else {
+                        "Chưa đạt mốc tính"
+                    }
                     textSize = 12f
                     setTextColor(Color.parseColor("#EE4D2D"))
                 }
@@ -386,7 +395,7 @@ class MainActivity : AppCompatActivity() {
                 setPadding(20, 14, 20, 14)
                 addView(createCell(SpxRateTables.WEIGHT_LABELS[i], false, if (count > 0) Color.parseColor("#111827") else Color.parseColor("#9CA3AF")))
                 addView(createCell(if (count > 0) "$count" else "0", false, if (count > 0) Color.parseColor("#EE4D2D") else Color.parseColor("#9CA3AF"), true))
-                addView(createCell(if (t != null) "${t.minOrder} - ${t.maxOrder}" else "-", false, if (count > 0) Color.parseColor("#EE4D2D") else Color.parseColor("#9CA3AF")))
+                addView(createCell(if (t != null) "${t.minOrder} - ${if (t.maxOrder == Int.MAX_VALUE) "+" else t.maxOrder}" else "-", false, if (count > 0) Color.parseColor("#EE4D2D") else Color.parseColor("#9CA3AF")))
                 addView(createCell(if (count > 0) "${fmt.format(itemMoney)} đ" else "0 đ", false, if (count > 0) Color.parseColor("#10B981") else Color.parseColor("#9CA3AF"), true))
             }
             table.addView(row)
@@ -394,13 +403,13 @@ class MainActivity : AppCompatActivity() {
         mainCard.addView(table)
         contentLayout.addView(mainCard)
 
-        // 2 nút Thao tác: Quét từ ảnh & Thêm số liệu
+        // 2 nút thao tác nhanh
         val btnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 30, 0, 30)
         }
         val btnScanAction = Button(this).apply {
-            text = "✨  Quét từ ảnh"
+            text = "✨  QUÉT TỪ ẢNH"
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.WHITE)
@@ -408,12 +417,12 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { photoPickerLauncher.launch("image/*") }
         }
         val btnAddAction = Button(this).apply {
-            text = "＋  Thêm số liệu"
+            text = "＋  THÊM SỐ LIỆU"
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#374151"))
             background = makeRoundedStroke(Color.WHITE, Color.parseColor("#D1D5DB"), 18f)
-            setOnClickListener { showAddOrderDialog(counts) }
+            setOnClickListener { showAddOrderDialog(counts, logs) }
         }
         val halfP = LinearLayout.LayoutParams(0, 120, 1f)
         btnRow.addView(btnScanAction, halfP)
@@ -457,65 +466,77 @@ class MainActivity : AppCompatActivity() {
                     RelativeLayout.LayoutParams.WRAP_CONTENT
                 ).apply { addRule(RelativeLayout.ALIGN_PARENT_RIGHT) }
                 layoutParams = p
+                setOnClickListener { Toast.makeText(this@MainActivity, "Đang trích xuất Excel...", Toast.LENGTH_SHORT).show() }
             }
             addView(box)
             addView(tvExport)
         }
         contentLayout.addView(logHeader)
 
-        // Danh sách thẻ nhật ký ngày
+        // Danh sách nhật ký ngày
         val logsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 20, 0, 0) }
-        for (log in logs) {
-            val logCard = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                background = makeRounded(Color.WHITE, 20f)
-                setPadding(35, 28, 35, 28)
-                val p = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = 20 }
-                layoutParams = p
+        if (logs.isEmpty()) {
+            val tvEmpty = TextView(this).apply {
+                text = "Chưa có dữ liệu nào. Hãy quét ảnh hoặc bấm 'Thêm số liệu' để bắt đầu."
+                textSize = 13f
+                setTextColor(Color.parseColor("#9CA3AF"))
+                gravity = Gravity.CENTER
+                setPadding(0, 40, 0, 40)
             }
-
-            val r1 = RelativeLayout(this).apply {
-                val dateBox = LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    val icon = TextView(this@MainActivity).apply { text = "📅 "; textSize = 13f }
-                    val d = TextView(this@MainActivity).apply { text = log.date; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#1F2937")) }
-                    addView(icon)
-                    addView(d)
-                }
-                val orderBox = TextView(this@MainActivity).apply {
-                    text = "${log.totalOrders} đơn"
-                    textSize = 13f
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(Color.parseColor("#1F2937"))
-                    background = makeRounded(Color.parseColor("#EEF2F6"), 14f)
-                    setPadding(20, 8, 20, 8)
-                    val p = RelativeLayout.LayoutParams(
-                        RelativeLayout.LayoutParams.WRAP_CONTENT,
-                        RelativeLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { addRule(RelativeLayout.ALIGN_PARENT_RIGHT) }
+            logsContainer.addView(tvEmpty)
+        } else {
+            for (log in logs) {
+                val logCard = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = makeRounded(Color.WHITE, 20f)
+                    setPadding(35, 28, 35, 28)
+                    val p = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = 20 }
                     layoutParams = p
                 }
-                addView(dateBox)
-                addView(orderBox)
+
+                val r1 = RelativeLayout(this).apply {
+                    val dateBox = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        val icon = TextView(this@MainActivity).apply { text = "📅 "; textSize = 13f }
+                        val d = TextView(this@MainActivity).apply { text = log.date; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#1F2937")) }
+                        addView(icon)
+                        addView(d)
+                    }
+                    val orderBox = TextView(this@MainActivity).apply {
+                        text = "${log.totalOrders} đơn"
+                        textSize = 13f
+                        typeface = Typeface.DEFAULT_BOLD
+                        setTextColor(Color.parseColor("#1F2937"))
+                        background = makeRounded(Color.parseColor("#EEF2F6"), 14f)
+                        setPadding(20, 8, 20, 8)
+                        val p = RelativeLayout.LayoutParams(
+                            RelativeLayout.LayoutParams.WRAP_CONTENT,
+                            RelativeLayout.LayoutParams.WRAP_CONTENT
+                        ).apply { addRule(RelativeLayout.ALIGN_PARENT_RIGHT) }
+                        layoutParams = p
+                    }
+                    addView(dateBox)
+                    addView(orderBox)
+                }
+                val noteTv = TextView(this).apply {
+                    text = "Ghi chú: ${log.note}"
+                    textSize = 12f
+                    setTextColor(Color.parseColor("#6B7280"))
+                    setPadding(0, 14, 0, 0)
+                }
+                logCard.addView(r1)
+                logCard.addView(noteTv)
+                logsContainer.addView(logCard)
             }
-            val noteTv = TextView(this).apply {
-                text = "Ghi chú: ${log.note}"
-                textSize = 12f
-                setTextColor(Color.parseColor("#6B7280"))
-                setPadding(0, 14, 0, 0)
-            }
-            logCard.addView(r1)
-            logCard.addView(noteTv)
-            logsContainer.addView(logCard)
         }
         contentLayout.addView(logsContainer)
     }
 
     private fun renderSummaryTab() {
-        // Khối Báo cáo Excel tháng
+        // Khối Báo cáo Excel
         val excelCard = RelativeLayout(this).apply {
             background = makeRounded(Color.WHITE, 24f)
             setPadding(35, 30, 35, 30)
@@ -564,7 +585,7 @@ class MainActivity : AppCompatActivity() {
                 val label = TextView(this@MainActivity).apply { text = "Xuất file"; setTextColor(Color.WHITE); textSize = 12f; typeface = Typeface.DEFAULT_BOLD }
                 addView(icon)
                 addView(label)
-                setOnClickListener { Toast.makeText(this@MainActivity, "Đang trích xuất Excel...", Toast.LENGTH_SHORT).show() }
+                setOnClickListener { Toast.makeText(this@MainActivity, "Đang xuất báo cáo Excel...", Toast.LENGTH_SHORT).show() }
             }
 
             addView(iconSheet)
@@ -583,23 +604,45 @@ class MainActivity : AppCompatActivity() {
         }
         contentLayout.addView(tvTip)
 
-        // Card Gợi ý Đơn Giao (Mẫu: 1.420.000 đ - Mốc 700-800 đơn)
-        contentLayout.addView(createNextTierCard("Bảng tính đơn giao", 1420000L, 787, "700 - 800", listOf(
-            Tuple3("Mức >0 - 2 kg (717 đơn • Mốc 700 - 800)", "Cần thêm +83 đơn để đạt mốc 800 - 900 đơn", "+175.000 đ"),
-            Tuple3("Mức >2 - 4 kg (27 đơn • Mốc 15 - 30)", "Cần thêm +3 đơn để đạt mốc 30 - 60 đơn", "+60.000 đ"),
-            Tuple3("Mức >4 - 6 kg (20 đơn • Mốc 15 - 30)", "Cần thêm +10 đơn để đạt mốc 30 - 60 đơn", "+50.000 đ"),
-            Tuple3("Mức >6 - 8 kg (9 đơn • Mốc 1 - 15)", "Cần thêm +6 đơn để đạt mốc 15 - 30 đơn", "+60.000 đ"),
-            Tuple3("Mức >8 - 10 kg (13 đơn • Mốc 1 - 15)", "Cần thêm +2 đơn để đạt mốc 15 - 30 đơn", "+80.000 đ"),
-            Tuple3("Mức >12 - 15 kg (1 đơn • Mốc 1 - 15)", "Cần thêm +14 đơn để đạt mốc 15 - 30 đơn", "+110.000 đ")
-        )))
+        // Tạo gợi ý tính tự động theo dữ liệu thực tế
+        val deliveryCard = buildDynamicSuggestionCard("Bảng tính đơn giao", deliveryCounts, SpxRateTables.DELIVERY_TIERS)
+        val pickupCard = buildDynamicSuggestionCard("Bảng tính đơn lấy", pickupCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
 
+        contentLayout.addView(deliveryCard)
         val space = View(this).apply { layoutParams = LinearLayout.LayoutParams(1, 30) }
         contentLayout.addView(space)
+        contentLayout.addView(pickupCard)
+    }
 
-        // Card Gợi ý Đơn Lấy (Mẫu: 425.000 đ - Mốc 900-1200 đơn)
-        contentLayout.addView(createNextTierCard("Bảng tính đơn lấy", 425000L, 940, "900 - 1200", listOf(
-            Tuple3("Mức >0 - 2 kg (926 đơn • Mốc 900 - 1200)", "Cần thêm +274 đơn để đạt mốc 1200 - 1500 đơn", "+100.000 đ")
-        )))
+    private fun buildDynamicSuggestionCard(title: String, counts: Map<Int, Int>, tiers: List<RateTier>): View {
+        val totalCount = counts.values.sum()
+        var totalMoney = 0L
+        counts.forEach { (col, count) ->
+            if (count > 0) {
+                val t = tiers.lastOrNull { count >= it.minOrder } ?: tiers.first()
+                totalMoney += t.rates[col].toLong() * 1000L
+            }
+        }
+        val currentTier = tiers.lastOrNull { totalCount >= it.minOrder } ?: tiers.first()
+        val tierName = if (totalCount == 0) "0 - 15" else "${currentTier.minOrder} - ${if (currentTier.maxOrder == Int.MAX_VALUE) "+" else currentTier.maxOrder}"
+
+        val items = mutableListOf<Tuple3<String, String, String>>()
+        for (i in 0..7) {
+            val count = counts[i] ?: 0
+            val curTierIndex = tiers.indexOfFirst { count in it.minOrder..it.maxOrder }
+            if (curTierIndex != -1 && curTierIndex + 1 < tiers.size) {
+                val nextTier = tiers[curTierIndex + 1]
+                val needed = nextTier.minOrder - count
+                val diffRate = (nextTier.rates[i] - tiers[curTierIndex].rates[i]) * 1000L
+                items.add(Tuple3(
+                    "Mức ${SpxRateTables.WEIGHT_LABELS[i]} ($count đơn • Mốc ${tiers[curTierIndex].minOrder} - ${tiers[curTierIndex].maxOrder})",
+                    "Cần thêm +$needed đơn để đạt mốc ${nextTier.minOrder} - ${nextTier.maxOrder} đơn",
+                    "+${fmt.format(diffRate)} đ"
+                ))
+            }
+        }
+
+        return createNextTierCard(title, totalMoney, totalCount, tierName, items)
     }
 
     private fun createNextTierCard(title: String, totalMoney: Long, totalOrders: Int, tierName: String, items: List<Tuple3<String, String, String>>): View {
@@ -661,69 +704,86 @@ class MainActivity : AppCompatActivity() {
         }
         card.addView(divider)
 
-        for (item in items) {
-            val itemBox = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                background = makeRounded(Color.parseColor("#F9FAFB"), 18f)
-                setPadding(30, 20, 30, 20)
-                val p = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = 16 }
-                layoutParams = p
-
-                val row = RelativeLayout(this@MainActivity).apply {
-                    val info = LinearLayout(this@MainActivity).apply {
-                        orientation = LinearLayout.VERTICAL
-                        val t1 = TextView(this@MainActivity).apply { text = item.first; textSize = 12f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#1F2937")) }
-                        val t2 = TextView(this@MainActivity).apply { text = item.second; textSize = 11f; setTextColor(Color.parseColor("#EE4D2D")); setPadding(0, 4, 0, 0) }
-                        addView(t1)
-                        addView(t2)
-                    }
-                    val bonus = TextView(this@MainActivity).apply {
-                        text = item.third
-                        textSize = 13f
-                        typeface = Typeface.DEFAULT_BOLD
-                        setTextColor(Color.parseColor("#10B981"))
-                        val p = RelativeLayout.LayoutParams(
-                            RelativeLayout.LayoutParams.WRAP_CONTENT,
-                            RelativeLayout.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
-                            addRule(RelativeLayout.CENTER_VERTICAL)
-                        }
-                        layoutParams = p
-                    }
-                    addView(info)
-                    addView(bonus)
-                }
-                addView(row)
+        if (items.isEmpty()) {
+            val tvEmpty = TextView(this).apply {
+                text = "Chưa có đủ dữ liệu đơn để phân tích mốc kế tiếp."
+                textSize = 12f
+                setTextColor(Color.parseColor("#9CA3AF"))
+                setPadding(0, 10, 0, 10)
             }
-            card.addView(itemBox)
+            card.addView(tvEmpty)
+        } else {
+            for (item in items.take(6)) {
+                val itemBox = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = makeRounded(Color.parseColor("#F9FAFB"), 18f)
+                    setPadding(30, 20, 30, 20)
+                    val p = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = 16 }
+                    layoutParams = p
+
+                    val row = RelativeLayout(this@MainActivity).apply {
+                        val info = LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            val t1 = TextView(this@MainActivity).apply { text = item.first; textSize = 12f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.parseColor("#1F2937")) }
+                            val t2 = TextView(this@MainActivity).apply { text = item.second; textSize = 11f; setTextColor(Color.parseColor("#EE4D2D")); setPadding(0, 4, 0, 0) }
+                            addView(t1)
+                            addView(t2)
+                        }
+                        val bonus = TextView(this@MainActivity).apply {
+                            text = item.third
+                            textSize = 13f
+                            typeface = Typeface.DEFAULT_BOLD
+                            setTextColor(Color.parseColor("#10B981"))
+                            val p = RelativeLayout.LayoutParams(
+                                RelativeLayout.LayoutParams.WRAP_CONTENT,
+                                RelativeLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
+                                addRule(RelativeLayout.CENTER_VERTICAL)
+                            }
+                            layoutParams = p
+                        }
+                        addView(info)
+                        addView(bonus)
+                    }
+                    addView(row)
+                }
+                card.addView(itemBox)
+            }
         }
         return card
     }
 
-    private fun showAddOrderDialog(targetMap: MutableMap<Int, Int>) {
+    private fun showAddOrderDialog(targetMap: MutableMap<Int, Int>, targetLogs: MutableList<DayLog>) {
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 20, 40, 20) }
         val inputs = mutableListOf<EditText>()
         for (i in 0..7) {
             val et = EditText(this).apply {
-                hint = "${SpxRateTables.WEIGHT_LABELS[i]}: ${targetMap[i] ?: 0}"
-                inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                hint = "${SpxRateTables.WEIGHT_LABELS[i]} (Hiện có: ${targetMap[i] ?: 0})"
+                inputType = InputType.TYPE_CLASS_NUMBER
             }
             inputs.add(et)
             layout.addView(et)
         }
         AlertDialog.Builder(this)
-            .setTitle("Cập nhật số đơn theo dải cân")
+            .setTitle("Nhập thêm đơn theo dải cân")
             .setView(layout)
             .setPositiveButton("Lưu") { _, _ ->
+                var addedTotal = 0
                 for (i in 0..7) {
-                    val txt = inputs[i].text.toString()
+                    val txt = inputs[i].text.toString().trim()
                     if (txt.isNotEmpty()) {
-                        targetMap[i] = txt.toIntOrNull() ?: 0
+                        val count = txt.toIntOrNull() ?: 0
+                        targetMap[i] = (targetMap[i] ?: 0) + count
+                        addedTotal += count
                     }
+                }
+                if (addedTotal > 0) {
+                    val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                    targetLogs.add(0, DayLog(today, addedTotal, "Nhập tay"))
                 }
                 renderCurrentTabContent()
             }
@@ -784,8 +844,11 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 }
-                val date = Regex("""(\d{2}/\d{2})""").find(text)?.value ?: "2026-09-08"
-                targetLogs.add(0, DayLog(date, dayCount, "Phân tích tự động từ ảnh"))
+                val dateMatch = Regex("""(\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2})""").find(text)
+                val date = dateMatch?.value ?: SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                if (dayCount > 0) {
+                    targetLogs.add(0, DayLog(date, dayCount, "Phân tích tự động từ ảnh"))
+                }
                 renderCurrentTabContent()
                 Toast.makeText(this, "Đã cập nhật $dayCount đơn vào hệ thống!", Toast.LENGTH_SHORT).show()
             }
