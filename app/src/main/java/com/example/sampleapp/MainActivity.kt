@@ -16,6 +16,7 @@ import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.text.DecimalFormat
@@ -30,7 +31,7 @@ data class DayPerformance(
     var delivery: Int = 0,
     var pickup: Int = 0,
     var returns: Int = 0,
-    var dailyProducedMoney: Long = 0L // Tiền sản lượng kiếm thêm được từ nhảy mốc trong ngày
+    var dailyProducedMoney: Long = 0L
 ) {
     fun getPoints(): Double = (delivery * 1.0) + (returns * 1.0) + (pickup / 6.0)
 
@@ -104,7 +105,7 @@ object SpxRateTables {
 class MainActivity : AppCompatActivity() {
 
     private val fmt = DecimalFormat("#,###")
-    private var currentTab = 0 // 0: Giao, 1: Lấy, 2: Hoàn, 3: Tổng Kết
+    private var currentTab = 0
     private var selectedRegion = "KV1"
 
     private val deliveryCounts = mutableMapOf(0 to 0, 1 to 0, 2 to 0, 3 to 0, 4 to 0, 5 to 0, 6 to 0, 7 to 0)
@@ -537,7 +538,6 @@ class MainActivity : AppCompatActivity() {
         btnRow.addView(btnAddAction, halfP)
         contentLayout.addView(btnRow)
 
-        // NHẬT KÝ THEO NGÀY & TỔNG TIỀN KIẾM ĐƯỢC TRONG NGÀY
         val logHeader = RelativeLayout(this).apply {
             val tvTitle = TextView(this@MainActivity).apply {
                 text = "Tổng tiền kiếm được & Công theo ngày"
@@ -930,7 +930,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    // THUẬT TOÁN NHẬN DIỆN VỊ TRÍ VẠCH ĐỎ/CAM THEO CHIỀU NGANG MÀN HÌNH
     private fun processImageWithRobustTabDetection(uri: Uri) {
         Toast.makeText(this, "Đang phân tích vạch chỉ mục & dữ liệu ảnh...", Toast.LENGTH_SHORT).show()
         val bitmap = try {
@@ -965,14 +964,14 @@ class MainActivity : AppCompatActivity() {
                         .setMessage("Ảnh tải lên có gạch chọn ở mục 【$detectedName】, nhưng bạn đang xem 【$currentName】.\n\nChuyển sang tab 【$detectedName】 để lưu chính xác?")
                         .setPositiveButton("Chuyển & Lưu") { _, _ ->
                             switchTab(detectedTab)
-                            executeDataImport(visionText.text, detectedTab)
+                            executeDataImport(visionText, detectedTab)
                         }
                         .setNegativeButton("Hủy", null)
                         .show()
                 } else {
                     val targetTab = if (currentTab == 3) detectedTab else currentTab
                     if (currentTab == 3) switchTab(detectedTab)
-                    executeDataImport(visionText.text, targetTab)
+                    executeDataImport(visionText, targetTab)
                 }
             }
             .addOnFailureListener {
@@ -980,12 +979,10 @@ class MainActivity : AppCompatActivity() {
             }
     }
 
-    // Quét tìm vạch gạch chân màu cam ở vùng 1/4 phía trên ảnh
     private fun detectTabByHorizontalIndicator(bitmap: Bitmap): Int {
         val width = bitmap.width
         val height = bitmap.height
 
-        // Thanh tab luôn nằm trong khoảng 8% đến 28% từ đỉnh ảnh xuống
         val topLimit = (height * 0.08).toInt()
         val bottomLimit = (height * 0.28).toInt()
 
@@ -999,7 +996,6 @@ class MainActivity : AppCompatActivity() {
                 val g = Color.green(pixel)
                 val b = Color.blue(pixel)
 
-                // Dấu gạch đỏ/cam của SPX (Màu đỏ vượt trội)
                 if (r > 175 && g in 35..135 && b < 85) {
                     redXSum += x
                     redPixelCount++
@@ -1010,61 +1006,76 @@ class MainActivity : AppCompatActivity() {
         if (redPixelCount > 8) {
             val avgX = (redXSum / redPixelCount).toDouble() / width
             return when {
-                avgX < 0.38 -> 0 // Nằm lệch bên trái -> Đã giao hàng
-                avgX in 0.38..0.66 -> 1 // Nằm ở giữa -> Đã lấy
-                else -> 2 // Nằm bên phải -> Đã trả hàng
+                avgX < 0.38 -> 0
+                avgX in 0.38..0.66 -> 1
+                else -> 2
             }
         }
 
-        return 0 // Mặc định nếu không thấy vạch thì coi là đơn giao
+        return 0
     }
 
-    private fun executeDataImport(text: String, tabIndex: Int) {
+    private fun executeDataImport(visionText: Text, tabIndex: Int) {
         val (targetMap, tiers) = when (tabIndex) {
             0 -> Pair(deliveryCounts, SpxRateTables.DELIVERY_TIERS)
             1 -> Pair(pickupCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
             else -> Pair(returnCounts, SpxRateTables.PICKUP_AND_RETURN_TIERS)
         }
 
-        // Tính tiền sản lượng trước khi cộng dồn
         val previousMoney = calculateTierTotal(targetMap, tiers)
 
-        val lines = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
-        var dayCount = 0
+        data class TextItem(val text: String, val y: Int, val x: Int)
+        val allLines = mutableListOf<TextItem>()
 
-        for (i in lines.indices) {
-            val line = lines[i]
-            val idx = when {
-                line.contains("0.000 - 2.001") || line.contains("0 - 2") -> 0
-                line.contains("2.001 - 4.001") || line.contains("2 - 4") -> 1
-                line.contains("4.001 - 6.001") || line.contains("4 - 6") -> 2
-                line.contains("6.001 - 8.001") || line.contains("6 - 8") -> 3
-                line.contains("8.001 - 10.001") || line.contains("8 - 10") -> 4
-                line.contains("10.001 - 12.001") || line.contains("10 - 12") -> 5
-                line.contains("12.001 - 15.001") || line.contains("12 - 15") -> 6
-                line.contains("> 15") || line.contains("15.001") -> 7
-                else -> -1
-            }
-            if (idx != -1) {
-                for (j in 1..3) {
-                    if (i + j < lines.size) {
-                        val match = Regex("""(\d+)\s*(Đơn hàng|Đơn|don)?""", RegexOption.IGNORE_CASE).find(lines[i + j])
-                        if (match != null) {
-                            val count = match.groupValues[1].toIntOrNull() ?: 0
-                            targetMap[idx] = (targetMap[idx] ?: 0) + count
-                            dayCount += count
-                            break
-                        }
-                    }
-                }
+        for (block in visionText.textBlocks) {
+            for (line in block.lines) {
+                val box = line.boundingBox
+                val centerY = if (box != null) (box.top + box.bottom) / 2 else 0
+                val centerX = if (box != null) (box.left + box.right) / 2 else 0
+                allLines.add(TextItem(line.text.trim(), centerY, centerX))
             }
         }
 
-        // Tính tiền sản lượng sau khi đã cộng dồn -> Tiền nhảy mốc sinh ra từ lượt quét hôm nay
+        val weightRanges = listOf(
+            Pair(0, listOf("0.000 - 2.001", "0 - 2")),
+            Pair(1, listOf("2.001 - 4.001", "2 - 4")),
+            Pair(2, listOf("4.001 - 6.001", "4 - 6")),
+            Pair(3, listOf("6.001 - 8.001", "6 - 8")),
+            Pair(4, listOf("8.001 - 10.001", "8 - 10")),
+            Pair(5, listOf("10.001 - 12.001", "10 - 12")),
+            Pair(6, listOf("12.001 - 15.001", "12 - 15")),
+            Pair(7, listOf("> 15", "15.001", ">15"))
+        )
+
+        var dayCount = 0
+
+        for ((idx, keys) in weightRanges) {
+            val labelItem = allLines.firstOrNull { item ->
+                keys.any { k -> item.text.contains(k, ignoreCase = true) }
+            }
+
+            if (labelItem != null) {
+                val matchingCountItem = allLines.filter { item ->
+                    Math.abs(item.y - labelItem.y) <= 70 && item.x > labelItem.x
+                }.minByOrNull { Math.abs(it.y - labelItem.y) }
+
+                val count = if (matchingCountItem != null) {
+                    val match = Regex("""(\d+)""").find(matchingCountItem.text)
+                    match?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                } else {
+                    0
+                }
+
+                targetMap[idx] = (targetMap[idx] ?: 0) + count
+                dayCount += count
+            }
+        }
+
         val afterMoney = calculateTierTotal(targetMap, tiers)
         val moneyGainedToday = (afterMoney - previousMoney).coerceAtLeast(0L)
 
-        val dateMatch = Regex("""(\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2})""").find(text)
+        val fullText = visionText.text
+        val dateMatch = Regex("""(\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2})""").find(fullText)
         val date = dateMatch?.value ?: SimpleDateFormat("dd/MM", Locale.getDefault()).format(Date())
 
         val record = dailyRecords.getOrPut(date) { DayPerformance(date) }
@@ -1082,7 +1093,7 @@ class MainActivity : AppCompatActivity() {
         val dayShiftMoney = (wagePerDay * record.getWorkShift()).toLong()
         val totalToday = dayShiftMoney + record.dailyProducedMoney
 
-        Toast.makeText(this, "Đã lưu $dayCount đơn! Hôm nay kiếm được: +${fmt.format(totalToday)} đ", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Đã khớp đúng $dayCount đơn! Hôm nay: +${fmt.format(totalToday)} đ", Toast.LENGTH_LONG).show()
     }
 
     private fun createCell(text: String, isHeader: Boolean, color: Int, isBold: Boolean = false): TextView {
