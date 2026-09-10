@@ -1,6 +1,7 @@
 package com.example.sampleapp
 
 import android.app.AlertDialog
+import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -16,6 +17,8 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import org.json.JSONArray
+import org.json.JSONObject
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -134,6 +137,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // NẠP DỮ LIỆU ĐÃ LƯU KHI MỞ APP
+        loadSavedAppData()
+
         val rootLayout = RelativeLayout(this).apply {
             setBackgroundColor(Color.parseColor("#F7F8FA"))
         }
@@ -168,6 +174,67 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(rootLayout)
         switchTab(0)
+    }
+
+    // --- CƠ CHẾ LƯU VÀ PHỤC HỒI DỮ LIỆU TỰ ĐỘNG BẰNG SHAREDPREFERENCES ---
+    private fun saveAppData() {
+        val prefs = getSharedPreferences("SPX_DATA_PREFS", Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+
+        editor.putString("selectedRegion", selectedRegion)
+        editor.putInt("selectedRankIndex", selectedRankIndex)
+        editor.putLong("hubDistanceMoney", hubDistanceMoney)
+        editor.putLong("deliveryDistanceMoney", deliveryDistanceMoney)
+
+        val jsonArray = JSONArray()
+        for ((date, record) in dailyRecords) {
+            val obj = JSONObject().apply {
+                put("date", date)
+                put("delArr", JSONArray(record.deliveryByWeight.toList()))
+                put("pickArr", JSONArray(record.pickupByWeight.toList()))
+                put("retArr", JSONArray(record.returnsByWeight.toList()))
+                put("producedMoney", record.dailyProducedMoney)
+            }
+            jsonArray.put(obj)
+        }
+        editor.putString("dailyRecordsJson", jsonArray.toString())
+        editor.apply()
+    }
+
+    private fun loadSavedAppData() {
+        val prefs = getSharedPreferences("SPX_DATA_PREFS", Context.MODE_PRIVATE)
+        selectedRegion = prefs.getString("selectedRegion", "KV1") ?: "KV1"
+        selectedRankIndex = prefs.getInt("selectedRankIndex", 0)
+        hubDistanceMoney = prefs.getLong("hubDistanceMoney", 0L)
+        deliveryDistanceMoney = prefs.getLong("deliveryDistanceMoney", 0L)
+
+        dailyRecords.clear()
+        val jsonStr = prefs.getString("dailyRecordsJson", null)
+        if (!jsonStr.isNullOrEmpty()) {
+            try {
+                val jsonArray = JSONArray(jsonStr)
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    val date = obj.getString("date")
+                    val delArr = obj.getJSONArray("delArr")
+                    val pickArr = obj.getJSONArray("pickArr")
+                    val retArr = obj.getJSONArray("retArr")
+                    val money = obj.optLong("producedMoney", 0L)
+
+                    val record = DayPerformance(date)
+                    for (k in 0..7) {
+                        record.deliveryByWeight[k] = delArr.optInt(k, 0)
+                        record.pickupByWeight[k] = pickArr.optInt(k, 0)
+                        record.returnsByWeight[k] = retArr.optInt(k, 0)
+                    }
+                    record.dailyProducedMoney = money
+                    dailyRecords[date] = record
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        recalculateAllTiers()
     }
 
     private fun createHeader(): View {
@@ -263,6 +330,7 @@ class MainActivity : AppCompatActivity() {
             .setItems(regions) { _, which ->
                 selectedRegion = keys[which]
                 btnRegionSelector.text = "📍 $selectedRegion"
+                saveAppData()
                 renderCurrentTabContent()
                 Toast.makeText(this, "Đã chuyển sang $selectedRegion", Toast.LENGTH_SHORT).show()
             }
@@ -308,6 +376,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "Đã xóa toàn bộ dữ liệu ứng dụng", Toast.LENGTH_SHORT).show()
                 }
                 recalculateAllTiers()
+                saveAppData()
                 renderCurrentTabContent()
             }
             .setNegativeButton("Hủy", null)
@@ -423,17 +492,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // TÍNH TOÁN LẠI CHÍNH XÁC TOÀN BỘ CÁC BẬC MỐC SAU KHI XÓA/SỬA NGÀY
     private fun recalculateAllTiers() {
         for (i in 0..7) {
             deliveryCounts[i] = 0
             pickupCounts[i] = 0
             returnCounts[i] = 0
         }
-
-        var runningDeliveryMoney = 0L
-        var runningPickupMoney = 0L
-        var runningReturnMoney = 0L
 
         for (record in dailyRecords.values) {
             val prevD = calculateTierTotal(deliveryCounts, SpxRateTables.DELIVERY_TIERS)
@@ -861,7 +925,7 @@ class MainActivity : AppCompatActivity() {
                     RelativeLayout.LayoutParams.WRAP_CONTENT
                 ).apply { addRule(RelativeLayout.ALIGN_PARENT_RIGHT) }
                 layoutParams = p
-                setOnClickListener { showDistanceInputDialog("Nhập Tiền Khoảng Cách Hub", hubDistanceMoney) { hubDistanceMoney = it; renderCurrentTabContent() } }
+                setOnClickListener { showDistanceInputDialog("Nhập Tiền Khoảng Cách Hub", hubDistanceMoney) { hubDistanceMoney = it; saveAppData(); renderCurrentTabContent() } }
             }
             addView(l)
             addView(tvHubVal)
@@ -892,7 +956,7 @@ class MainActivity : AppCompatActivity() {
                     RelativeLayout.LayoutParams.WRAP_CONTENT
                 ).apply { addRule(RelativeLayout.ALIGN_PARENT_RIGHT) }
                 layoutParams = p
-                setOnClickListener { showDistanceInputDialog("Nhập Tiền Khoảng Cách Đơn Giao", deliveryDistanceMoney) { deliveryDistanceMoney = it; renderCurrentTabContent() } }
+                setOnClickListener { showDistanceInputDialog("Nhập Tiền Khoảng Cách Đơn Giao", deliveryDistanceMoney) { deliveryDistanceMoney = it; saveAppData(); renderCurrentTabContent() } }
             }
             addView(l)
             addView(tvDelivVal)
@@ -931,6 +995,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Chọn Xếp Hạng Của Bạn")
             .setItems(options) { _, which ->
                 selectedRankIndex = which
+                saveAppData()
                 renderCurrentTabContent()
                 Toast.makeText(this, "Đã chọn hạng: ${SpxRateTables.RANKS[which]}", Toast.LENGTH_SHORT).show()
             }
@@ -955,7 +1020,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    // HỘP THOẠI SỬA/XÓA NGÀY - TỰ ĐỘNG CẬP NHẬT LẠI MỐC
     private fun showEditDayDialog(date: String, record: DayPerformance) {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1003,15 +1067,16 @@ class MainActivity : AppCompatActivity() {
                 record.returnsByWeight[0] = (record.returnsByWeight[0] + (newRet - curRet)).coerceAtLeast(0)
 
                 recalculateAllTiers()
+                saveAppData()
                 renderCurrentTabContent()
-                Toast.makeText(this, "Đã cập nhật ngày $date và tính lại toàn bộ mốc!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Đã cập nhật ngày $date và lưu dữ liệu!", Toast.LENGTH_SHORT).show()
             }
             .setNeutralButton("Xóa ngày này") { _, _ ->
-                // XÓA NGÀY VÀ TÍNH LẠI TOÀN BỘ CÁC MỐC TRÊN BẢNG
                 dailyRecords.remove(date)
                 recalculateAllTiers()
+                saveAppData()
                 renderCurrentTabContent()
-                Toast.makeText(this, "Đã xóa ngày $date và trừ sạch số đơn khỏi các mốc!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Đã xóa ngày $date và cập nhật lại bộ nhớ!", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Hủy", null)
             .show()
@@ -1203,6 +1268,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 recalculateAllTiers()
+                saveAppData()
                 renderCurrentTabContent()
             }
             .setNegativeButton("Hủy", null)
@@ -1310,6 +1376,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         recalculateAllTiers()
+        saveAppData()
         renderCurrentTabContent()
 
         val tabNames = listOf("Đơn Giao", "Đơn Lấy", "Đơn Hoàn")
